@@ -1,0 +1,34 @@
+{
+	"schemaVersion": 1,
+	"id": "golem_covenant",
+	"version": "${version}",
+	"name": "Golem Covenant",
+	"description": "傀儡契约 - an addon for the 傀儡化 (Golemization) mod. Gives every golemized creature its own soul: three tiers of revival (借魂 / 觉醒 / 圣契), a soul anchor, a unique ritual and a one-shot death will.",
+	"authors": [
+		"Golem Covenant"
+	],
+	"contact": {
+		"homepage": "https://fabricmc.net/",
+		"sources": "https://github.com/"
+	},
+	"license": "CC0-1.0",
+	"icon": "assets/golem_covenant/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"com.example.golem_covenant.GolemCovenantMod"
+		],
+		"client": [
+			"com.example.golem_covenant.client.GolemCovenantClient"
+		]
+	},
+	"depends": {
+		"fabricloader": ">=0.19.5",
+		"minecraft": "~26.2",
+		"java": ">=25",
+		"fabric-api": "*"
+	},
+	"recommends": {
+		"copper_enchant": "*"
+	}
+}

@@ -1,0 +1,104 @@
+plugins {
+	id 'net.fabricmc.fabric-loom' version "${loom_version}"
+	id 'maven-publish'
+}
+
+repositories {
+	// Loom adds the essential maven repositories to download Minecraft and
+	// libraries from automatically. Additional repositories go here.
+}
+
+loom {
+	splitEnvironmentSourceSets()
+
+	mods {
+		"golem-covenant" {
+			sourceSet sourceSets.main
+			sourceSet sourceSets.client
+		}
+	}
+}
+
+dependencies {
+	// To change the versions see the gradle.properties file
+	minecraft "com.mojang:minecraft:${project.minecraft_version}"
+	implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+
+	// Fabric API. This is technically optional, but you probably want it anyway.
+	implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+
+	// ---------------------------------------------------------------------
+	// SOFT dependency on the base Golemization mod (傀儡化 / copper_enchant).
+	//
+	// All contact with the base mod is isolated in compat/GolemizationCompat,
+	// which resolves the base classes reflectively. That keeps the addon
+	// loadable (degraded, never crashing) when the base mod is absent, and it
+	// also means this project does not need the base mod on the compile
+	// classpath at all - see tools/README.md for the interface survey.
+	// ---------------------------------------------------------------------
+}
+
+processResources {
+	def version = project.version
+	inputs.property "version", version
+
+	filesMatching("fabric.mod.json") {
+		expand "version": version
+	}
+}
+
+tasks.withType(JavaCompile).configureEach {
+	it.options.release = 25
+}
+
+java {
+	// Loom will automatically attach sourcesJar to a RemapSourcesJar task and to the "build" task
+	// if it is present.
+	// If you remove this line, sources will not be generated.
+	withSourcesJar()
+
+	sourceCompatibility = JavaVersion.VERSION_25
+	targetCompatibility = JavaVersion.VERSION_25
+}
+
+jar {
+	def projectName = project.name
+	inputs.property "projectName", projectName
+
+	from("LICENSE") {
+		rename { "${it}_$projectName"}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Registry data gate (spec 11.2.4 / 15.5.10).
+// Fails the build when forms_registry.json violates a stated invariant.
+// ---------------------------------------------------------------------------
+tasks.register('validateFormsRegistry', Exec) {
+	group = 'verification'
+	description = 'Validates the 186-form registry against the spec invariants'
+	def pythonExe = providers.environmentVariable('PYTHON').getOrElse('python')
+	commandLine pythonExe, 'tools/validate_registry.py',
+			'src/main/resources/data/golem_covenant/forms_registry.json'
+}
+
+tasks.named('check') {
+	dependsOn tasks.named('validateFormsRegistry')
+}
+
+// configure the maven publication
+publishing {
+	publications {
+		create("mavenJava", MavenPublication) {
+			from components.java
+		}
+	}
+
+	// See https://docs.gradle.org/current/userguide/publishing_maven.html for information on how to set up publishing.
+	repositories {
+		// Add repositories to publish to here.
+		// Notice: This block does NOT have the same function as the block in the top level.
+		// The repositories here will be used for publishing your artifact, not for
+		// retrieving dependencies.
+	}
+}
