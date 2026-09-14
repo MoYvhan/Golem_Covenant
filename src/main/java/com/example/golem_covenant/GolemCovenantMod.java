@@ -6,6 +6,7 @@ import net.minecraft.resources.Identifier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.example.golem_covenant.bond.BondEngine;
 import com.example.golem_covenant.compat.GolemizationCompat;
 import com.example.golem_covenant.data.FormsRegistry;
 import com.example.golem_covenant.death.DeathWillEngine;
@@ -16,6 +17,7 @@ import com.example.golem_covenant.registry.ModParticles;
 import com.example.golem_covenant.registry.ModSounds;
 import com.example.golem_covenant.ritual.RitualEngine;
 import com.example.golem_covenant.summon.SummonManager;
+import com.example.golem_covenant.team.ResonanceEngine;
 
 /**
  * 傀儡契约 / Golem Covenant - addon entrypoint.
@@ -56,6 +58,8 @@ public class GolemCovenantMod implements ModInitializer {
 		SummonManager.register();
 		RitualEngine.register();
 		DeathWillEngine.register();
+		BondEngine.register();
+		ResonanceEngine.register();
 
 		// 5. Session state must not leak across worlds (spec 11.14).
 		net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents
@@ -63,6 +67,8 @@ public class GolemCovenantMod implements ModInitializer {
 					DeathWillEngine.onServerStopped();
 					RitualEngine.onServerStopped();
 					SummonManager.onServerStopped();
+					BondEngine.onServerStopped();
+					ResonanceEngine.onServerStopped();
 				});
 
 		if (baseModPresent) {

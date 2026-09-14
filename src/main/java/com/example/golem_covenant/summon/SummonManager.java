@@ -390,15 +390,9 @@ public final class SummonManager {
 				mob.getNavigation().moveTo(owner, 1.2);
 				mob.setTarget(null);
 			}
-			// bond accrual (spec 9.4): proximity
-			if (dist <= 16 && server.getTickCount() % 200 == 0) {
-				int bond = Math.min(100, data.bond() + 1);
-				if (bond != data.bond()) {
-					companion.setAttached(ModAttachments.COVENANT,
-							data.withBond(bond));
-					LEDGER.put(e.getKey(), data.withBond(bond));
-				}
-			}
+			// Bond accrual is owned by BondEngine (spec ch.9) - it owns the
+			// daily caps and threshold announcements, so the ledger must not
+			// write bond values itself.
 		}
 		for (UUID id : expired) {
 			CovenantData d = LEDGER.remove(id);
@@ -409,6 +403,31 @@ public final class SummonManager {
 	// ------------------------------------------------------------------
 	// helpers
 	// ------------------------------------------------------------------
+
+	/**
+	 * Live companions owned by {@code player}. Used by {@code BondEngine} for
+	 * the absence penalty and by the resonance engine for team evaluation.
+	 */
+	public static List<LivingEntity> ownedCompanionsOf(ServerPlayer player) {
+		if (!(player.level() instanceof ServerLevel level)) {
+			return List.of();
+		}
+		List<LivingEntity> out = new ArrayList<>();
+		for (UUID id : LEDGER.keySet()) {
+			Entity e = level.getEntity(id);
+			if (e instanceof LivingEntity living && isActiveCompanion(living,
+					player.getUUID())) {
+				out.add(living);
+			}
+		}
+		return out;
+	}
+
+	/** True when {@code entity} is an active companion belonging to {@code owner}. */
+	public static boolean isActiveCompanion(LivingEntity entity, UUID owner) {
+		CovenantData d = entity.getAttached(ModAttachments.COVENANT);
+		return d != null && d.active() && d.ownedBy(owner);
+	}
 
 	private static boolean hasFormAlready(ServerPlayer player, String formId,
 			CovenantTier tier) {

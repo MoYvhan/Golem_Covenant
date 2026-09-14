@@ -124,6 +124,34 @@ DEATH_WILL_MSG = {
         "%s已消散。"),
 }
 
+# spec ch.9 Bond growth + ch.10 anchor resonance
+BOND_MSG = {
+    "bond.advanced": (
+        "%s deepened its pact: %s (%s)",
+        "%s 的契约加深：%s（%s）"),
+}
+
+RESONANCE = {
+    "resonance.formed": (
+        "Anchor resonance formed: %s",
+        "锚点共鸣形成：%s"),
+    "resonance.broken": (
+        "Anchor resonance broke: %s",
+        "锚点共鸣中断：%s"),
+    "resonance.close_far": (
+        "Close-Far Coordination",
+        "远近协同"),
+    "resonance.space_web": (
+        "Space Web",
+        "空间蛛网"),
+    "resonance.echo_snipe": (
+        "Echo Snipe",
+        "声纹狙击"),
+    "resonance.generic": (
+        "Shared Mark",
+        "协同标记"),
+}
+
 KEYS = {
     "key.categories.golem_covenant": ("Golem Covenant", "傀儡契约"),
     "key.golem_covenant.ability": ("Trigger companion ability", "触发伙伴能力"),
@@ -223,6 +251,11 @@ def build(en: bool) -> dict:
     for k, v in MESSAGES.items():
         out[f"golem_covenant.{k}"] = v[0] if en else v[1]
     for k, v in DEATH_WILL_MSG.items():
+        out[f"golem_covenant.{k}"] = v[0] if en else v[1]
+    # these blocks already carry their full sub-path, so prefix once
+    for k, v in BOND_MSG.items():
+        out[f"golem_covenant.{k}"] = v[0] if en else v[1]
+    for k, v in RESONANCE.items():
         out[f"golem_covenant.{k}"] = v[0] if en else v[1]
     merge(out, KEYS, en)
     merge(out, HUD, en)

@@ -90,6 +90,7 @@ tasks.register('generateLang', Exec) {
 	description = 'Regenerates en_us/zh_cn lang from the registry'
 	def pythonExe = providers.environmentVariable('PYTHON').getOrElse('python')
 	commandLine pythonExe, 'tools/gen_lang.py'
+	inputs.file('tools/gen_lang.py')
 	inputs.file('src/main/resources/data/golem_covenant/forms_registry.json')
 	outputs.dir('src/main/resources/assets/golem_covenant/lang')
 }
@@ -99,6 +100,7 @@ tasks.register('generateAssets', Exec) {
 	description = 'Regenerates particle definitions and sounds.json'
 	def pythonExe = providers.environmentVariable('PYTHON').getOrElse('python')
 	commandLine pythonExe, 'tools/gen_assets.py'
+	inputs.file('tools/gen_assets.py')
 	outputs.dir('src/main/resources/assets/golem_covenant/particles')
 	outputs.file('src/main/resources/assets/golem_covenant/sounds.json')
 }
@@ -116,8 +118,21 @@ tasks.withType(Jar).configureEach {
 	dependsOn tasks.named('generateAssets')
 }
 
+tasks.register('validateSystems', Exec) {
+	group = 'verification'
+	description = 'Checks the Bond (ch.9) and Resonance (ch.10) design invariants'
+	def pythonExe = providers.environmentVariable('PYTHON').getOrElse('python')
+	commandLine pythonExe, 'tools/validate_systems.py'
+	inputs.file('tools/validate_systems.py')
+	inputs.file('src/main/java/com/example/golem_covenant/bond/BondEngine.java')
+	inputs.file('src/main/java/com/example/golem_covenant/team/ResonanceEngine.java')
+	inputs.file('src/main/java/com/example/golem_covenant/data/CovenantData.java')
+	inputs.file('src/main/resources/data/golem_covenant/forms_registry.json')
+}
+
 tasks.named('check') {
 	dependsOn tasks.named('validateFormsRegistry')
+	dependsOn tasks.named('validateSystems')
 	dependsOn tasks.named('generateLang')
 	dependsOn tasks.named('generateAssets')
 }
