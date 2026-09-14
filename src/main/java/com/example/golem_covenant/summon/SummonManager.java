@@ -454,4 +454,12 @@ public final class SummonManager {
 	public static Map<UUID, CovenantData> ledger() {
 		return Map.copyOf(LEDGER);
 	}
+
+	/**
+	 * Spec 11.14: the ledger is a runtime index over entity attachments, so it
+	 * is rebuilt on load and must not survive a server stop.
+	 */
+	public static void onServerStopped() {
+		LEDGER.clear();
+	}
 }

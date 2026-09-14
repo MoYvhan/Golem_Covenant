@@ -197,4 +197,9 @@ public final class RitualEngine {
 		}
 		return particleQuality;
 	}
+
+	/** Spec 11.14: ceremonies are transient, never persisted across sessions. */
+	public static void onServerStopped() {
+		ACTIVE.clear();
+	}
 }

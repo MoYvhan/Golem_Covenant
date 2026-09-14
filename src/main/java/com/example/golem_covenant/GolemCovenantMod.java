@@ -57,6 +57,14 @@ public class GolemCovenantMod implements ModInitializer {
 		RitualEngine.register();
 		DeathWillEngine.register();
 
+		// 5. Session state must not leak across worlds (spec 11.14).
+		net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents
+				.SERVER_STOPPED.register(server -> {
+					DeathWillEngine.onServerStopped();
+					RitualEngine.onServerStopped();
+					SummonManager.onServerStopped();
+				});
+
 		if (baseModPresent) {
 			LOGGER.info("傀儡契约 loaded - base mod '{}' detected, {} forms active.",
 					BASE_MOD_ID, FormsRegistry.activeCount());

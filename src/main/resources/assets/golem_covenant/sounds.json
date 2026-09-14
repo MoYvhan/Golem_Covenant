@@ -1,0 +1,47 @@
+{
+  "death_will_control": {
+    "sounds": [
+      "golem_covenant:death_will_control"
+    ]
+  },
+  "death_will_element": {
+    "sounds": [
+      "golem_covenant:death_will_element"
+    ]
+  },
+  "death_will_guard": {
+    "sounds": [
+      "golem_covenant:death_will_guard"
+    ]
+  },
+  "death_will_heal": {
+    "sounds": [
+      "golem_covenant:death_will_heal"
+    ]
+  },
+  "death_will_mobility": {
+    "sounds": [
+      "golem_covenant:death_will_mobility"
+    ]
+  },
+  "death_will_scout": {
+    "sounds": [
+      "golem_covenant:death_will_scout"
+    ]
+  },
+  "ritual_a": {
+    "sounds": [
+      "golem_covenant:ritual_a"
+    ]
+  },
+  "ritual_b": {
+    "sounds": [
+      "golem_covenant:ritual_b"
+    ]
+  },
+  "ritual_c": {
+    "sounds": [
+      "golem_covenant:ritual_c"
+    ]
+  }
+}

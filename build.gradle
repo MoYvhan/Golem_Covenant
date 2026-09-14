@@ -71,8 +71,11 @@ jar {
 }
 
 // ---------------------------------------------------------------------------
-// Registry data gate (spec 11.2.4 / 15.5.10).
-// Fails the build when forms_registry.json violates a stated invariant.
+// Data / asset generation + gates (spec 11.2.4 / 15.5.10).
+//
+// The registry is the single authoritative source (spec 11.2.1). Lang files
+// and particle/sound assets are DERIVED from it, so they are regenerated and
+// validated as part of `check` and can never drift.
 // ---------------------------------------------------------------------------
 tasks.register('validateFormsRegistry', Exec) {
 	group = 'verification'
@@ -82,8 +85,41 @@ tasks.register('validateFormsRegistry', Exec) {
 			'src/main/resources/data/golem_covenant/forms_registry.json'
 }
 
+tasks.register('generateLang', Exec) {
+	group = 'build'
+	description = 'Regenerates en_us/zh_cn lang from the registry'
+	def pythonExe = providers.environmentVariable('PYTHON').getOrElse('python')
+	commandLine pythonExe, 'tools/gen_lang.py'
+	inputs.file('src/main/resources/data/golem_covenant/forms_registry.json')
+	outputs.dir('src/main/resources/assets/golem_covenant/lang')
+}
+
+tasks.register('generateAssets', Exec) {
+	group = 'build'
+	description = 'Regenerates particle definitions and sounds.json'
+	def pythonExe = providers.environmentVariable('PYTHON').getOrElse('python')
+	commandLine pythonExe, 'tools/gen_assets.py'
+	outputs.dir('src/main/resources/assets/golem_covenant/particles')
+	outputs.file('src/main/resources/assets/golem_covenant/sounds.json')
+}
+
+tasks.named('processResources') {
+	dependsOn tasks.named('generateLang')
+	dependsOn tasks.named('generateAssets')
+}
+
+// The generators write into src/main/resources, so every task that reads that
+// directory must depend on them - otherwise Gradle's task-graph validation
+// fails (correctly: execution order would otherwise be undefined).
+tasks.withType(Jar).configureEach {
+	dependsOn tasks.named('generateLang')
+	dependsOn tasks.named('generateAssets')
+}
+
 tasks.named('check') {
 	dependsOn tasks.named('validateFormsRegistry')
+	dependsOn tasks.named('generateLang')
+	dependsOn tasks.named('generateAssets')
 }
 
 // configure the maven publication
