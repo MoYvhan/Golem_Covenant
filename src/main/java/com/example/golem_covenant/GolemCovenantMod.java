@@ -6,6 +6,8 @@ import net.minecraft.resources.Identifier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.example.golem_covenant.anchor.AnchorRuntime;
+import com.example.golem_covenant.anchor.Anchors;
 import com.example.golem_covenant.bond.BondEngine;
 import com.example.golem_covenant.compat.GolemizationCompat;
 import com.example.golem_covenant.data.FormsRegistry;
@@ -41,6 +43,8 @@ public class GolemCovenantMod implements ModInitializer {
 
 		// 1. Load the authoritative 186-form registry (spec 11.2).
 		FormsRegistry.load();
+		// spec ch.6: index the anchor table that lives beside the forms.
+		Anchors.load();
 
 		// 2. Bind the registry against the base mod's real capabilities
 		//    (spec 11.1.4 / 11.2.3). Missing base mod => soft-disable.
@@ -60,6 +64,8 @@ public class GolemCovenantMod implements ModInitializer {
 		DeathWillEngine.register();
 		BondEngine.register();
 		ResonanceEngine.register();
+		// spec ch.6: the anchor runtime drives every companion's behaviour.
+		AnchorRuntime.register();
 
 		// 5. Session state must not leak across worlds (spec 11.14).
 		net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents
@@ -69,11 +75,13 @@ public class GolemCovenantMod implements ModInitializer {
 					SummonManager.onServerStopped();
 					BondEngine.onServerStopped();
 					ResonanceEngine.onServerStopped();
+					AnchorRuntime.onServerStopped();
 				});
 
 		if (baseModPresent) {
-			LOGGER.info("傀儡契约 loaded - base mod '{}' detected, {} forms active.",
-					BASE_MOD_ID, FormsRegistry.activeCount());
+			LOGGER.info("傀儡契约 loaded - base mod '{}' detected, {} forms "
+					+ "across {} anchors active.",
+					BASE_MOD_ID, FormsRegistry.activeCount(), Anchors.count());
 		} else {
 			LOGGER.warn("傀儡契约 loaded WITHOUT base mod '{}'. "
 					+ "Covenant items are inert; no crash (spec 11.1.3).",

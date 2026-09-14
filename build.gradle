@@ -130,9 +130,22 @@ tasks.register('validateSystems', Exec) {
 	inputs.file('src/main/resources/data/golem_covenant/forms_registry.json')
 }
 
+// Spec 6.2 iron law: every anchor must change >= 3 of the nine dimensions.
+// This is the gate that stops the whole anchor system from degrading into a
+// pile of "+20 attack" stat tweaks (spec 6.1).
+tasks.register('validateAnchors', Exec) {
+	group = 'verification'
+	description = 'Checks the soul-anchor invariants (spec ch.6)'
+	def pythonExe = providers.environmentVariable('PYTHON').getOrElse('python')
+	commandLine pythonExe, 'tools/validate_anchors.py'
+	inputs.file('tools/validate_anchors.py')
+	inputs.file('src/main/resources/data/golem_covenant/forms_registry.json')
+}
+
 tasks.named('check') {
 	dependsOn tasks.named('validateFormsRegistry')
 	dependsOn tasks.named('validateSystems')
+	dependsOn tasks.named('validateAnchors')
 	dependsOn tasks.named('generateLang')
 	dependsOn tasks.named('generateAssets')
 }

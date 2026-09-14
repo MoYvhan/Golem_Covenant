@@ -39,6 +39,10 @@ public final class FormsRegistry {
 	private static final Map<String, String> FORM_TO_ENTITY =
 			new LinkedHashMap<>();
 
+	/** Spec ch.6: the anchor table, keyed by anchorId. */
+	private static final Map<String, AnchorProfile> ANCHORS =
+			new LinkedHashMap<>();
+
 	private static boolean loaded = false;
 	private static int reservedCount = 0;
 
@@ -67,8 +71,9 @@ public final class FormsRegistry {
 					new InputStreamReader(in, StandardCharsets.UTF_8)).getAsJsonObject();
 			parse(root);
 			GolemCovenantMod.LOGGER.info(
-					"loaded forms_registry: {} active, {} reserved (schema v{})",
-					BY_FORM.size(), reservedCount,
+					"loaded forms_registry: {} active, {} reserved, "
+					+ "{} anchors (schema v{})",
+					BY_FORM.size(), reservedCount, ANCHORS.size(),
 					root.has("dataVersion") ? root.get("dataVersion").getAsInt() : 1);
 		} catch (Exception e) {
 			GolemCovenantMod.LOGGER.error("failed to load forms_registry", e);
@@ -76,6 +81,19 @@ public final class FormsRegistry {
 	}
 
 	private static void parse(JsonObject root) {
+		// spec ch.6: the anchor table must be read before the forms, because a
+		// form resolves its behaviour through its anchorId.
+		JsonObject anchors = obj(root, "anchors");
+		if (anchors != null) {
+			for (Map.Entry<String, JsonElement> e : anchors.entrySet()) {
+				if (!e.getValue().isJsonObject()) {
+					continue;
+				}
+				ANCHORS.put(e.getKey(),
+						toAnchor(e.getKey(), e.getValue().getAsJsonObject()));
+			}
+		}
+
 		JsonArray forms = root.getAsJsonArray("forms");
 		if (forms == null) {
 			return;
@@ -135,6 +153,33 @@ public final class FormsRegistry {
 				str(o, "cUpgrade", ""),
 				str(o, "ritualTheme", ""),
 				abilities, ritual, will, SoulProfile.Limits.defaults());
+	}
+
+	/** Parses one entry of the registry's {@code anchors} block (spec ch.6). */
+	private static AnchorProfile toAnchor(String id, JsonObject o) {
+		return new AnchorProfile(
+				id,
+				str(o, "name", id),
+				str(o, "familyId", ""),
+				str(o, "behaviour", "reserved"),
+				str(o, "specRef", ""),
+				str(o, "watch", ""),
+				str(o, "source", ""),
+				str(o, "trigger", ""),
+				str(o, "combat", ""),
+				str(o, "ai", ""),
+				str(o, "zone", ""),
+				str(o, "interact", ""));
+	}
+
+	/** The anchor definition for an id, if the registry declared one. */
+	public static Optional<AnchorProfile> anchorById(String anchorId) {
+		return Optional.ofNullable(ANCHORS.get(anchorId));
+	}
+
+	/** Every declared anchor (spec 6.2: 64 across 10 families). */
+	public static List<AnchorProfile> anchors() {
+		return List.copyOf(ANCHORS.values());
 	}
 
 	private static RitualProfile toRitual(JsonObject o, String theme) {

@@ -336,21 +336,651 @@ COLORS = {
     "special": "#C2542A",
 }
 
+# ---------------------------------------------------------------------------
+# 第六章 灵魂锚点系统 (spec ch.6)
+#
+# 6.1: an anchor is NOT a buff / attribute / weapon / single skill. It is the
+#      RULE by which a soul observes the world and joins a fight.
+# 6.2 铁律 ("iron law"): every anchor must change at least THREE of the nine
+#      dimensions below - a mere stat tweak is a spec violation.
+# 12.1: forms must be `Profile + Ability + Anchor + Ritual + DeathWill`; there
+#      must never be a ZombieCompanion.java / SpiderCompanion.java.
+#
+# Layout: (watch, source, trigger, combat, ai, zone, interact, behaviour)
+#   watch   1. 观察对象     - what the anchor reads from the world
+#   source  2. 资源来源     - what resource the reading accumulates into
+#   trigger 3. 触发条件     - what makes the mechanism fire
+#   combat  4. 战斗方式     - how it fights (never a damage number)
+#   ai      5. AI 决策      - how targeting / pathing changes
+#   zone    6. 区域规则     - what spatial rule it imposes
+#   interact 7. 玩家互动    - how the player participates
+#   behaviour - runtime dispatch keyword, consumed by AnchorRuntime
+#
+# 8. 死亡遗志 and 9. 仪式结构 are the OTHER two dimensions: they are already
+# carried per-form by `deathWillId` / `ritual`, and validate_anchors.py reads
+# those two back out of the form rows to complete the nine-dimension test.
+# ---------------------------------------------------------------------------
+ANCHOR_DIMENSIONS = [
+    "watch", "source", "trigger", "combat", "ai", "zone", "interact",
+    "behaviour",
+]
+
+# behaviour -> (displayName, spec reference) - the finite runtime vocabulary.
+# 64 anchors map onto 26 behaviours, which keeps the implementation data-driven
+# instead of one class per creature (spec 12.1 / 12.6).
+ANCHOR_BEHAVIOURS = {
+    "death_harvest": ("死亡收割", "6.3.1"),
+    "corpse_anchor": ("尸锚", "6.3.1"),
+    "desiccation_field": ("枯竭场", "6.3.1"),
+    "tide_pursuit": ("亡潮追猎", "6.3.1"),
+    "arrow_forecast": ("落点预测", "6.3.3"),
+    "frost_trajectory": ("冰轨预判", "6.3.3"),
+    "blade_reap": ("凋零收割", "6.3.1"),
+    "village_cycle": ("循环再生", "6.3.11"),
+    "gold_contract": ("金契掠夺", "6.3.11"),
+    "gold_flame": ("金焰灼印", "6.3.1"),
+    "web_of_fate": ("命运织网", "6.3.2"),
+    "venom_nest": ("毒巢", "6.3.2"),
+    "shadow_mite": ("影螨撕咬", "6.3.2"),
+    "burrow_swarm": ("潜地虫群", "6.3.2"),
+    "hive": ("蜂巢网络", "6.3.6"),
+    "charge_horn": ("冲锋号角", "6.3.5"),
+    "spore": ("孢子扩散", "6.3.9"),
+    "tusk": ("獠牙突刺", "6.3.5"),
+    "wool": ("绒毛缓冲", "6.3.5"),
+    "plume_dance": ("羽舞扰乱", "6.3.5"),
+    "moon_leap": ("月跃", "6.3.9"),
+    "night_prowl": ("夜行潜猎", "6.3.5"),
+    "nine_lives": ("九命回援", "6.3.5"),
+    "jungle_stalk": ("丛影尾随", "6.3.5"),
+    "hunt": ("狩猎锚", "6.3.5"),
+    "steady_hoof": ("稳健驮行", "6.3.5"),
+    "burden": ("负重领域", "6.3.5"),
+    "sand_march": ("沙行长驱", "6.3.9"),
+    "sky_dash": ("疾空冲刺", "6.3.5"),
+    "rock_roll": ("滚石领域", "6.3.9"),
+    "bamboo": ("竹阵", "6.3.9"),
+    "arctic_fang": ("极地獠牙", "6.3.9"),
+    "mountain_horn": ("山峦回响", "6.3.9"),
+    "snow_prowl": ("雪原潜行", "6.3.9"),
+    "biome_orb": ("群系领域", "6.3.9"),
+    "warm_spring": ("暖泉蒸腾", "6.3.9"),
+    "grass_echo": ("草木回声", "6.3.9"),
+    "frost_leap": ("寒跃冻结", "6.3.9"),
+    "tide_shell": ("潮汐甲壳", "6.3.9"),
+    "echo_sense": ("回响感知", "6.3.8"),
+    "deep_ink": ("深墨障目", "6.3.9"),
+    "current_dash": ("洋流突进", "6.3.5"),
+    "spine_guard": ("棘刺防卫", "6.3.5"),
+    "school_charge": ("群游冲阵", "6.3.5"),
+    "coral_scale": ("珊瑚鳞护", "6.3.9"),
+    "regeneration_gill": ("再生鳃息", "6.3.9"),
+    "city_wall": ("城墙壁垒", "6.3.10"),
+    "guardian_watch": ("守望铁卫", "6.3.10"),
+    "elastic": ("弹性锚", "6.3.10"),
+    "magma_core": ("熔核锚", "6.3.10"),
+    "sun_flare": ("日耀喷发", "6.3.10"),
+    "wail": ("哀鸣声场", "6.3.10"),
+    "lava_stride": ("熔岩踏行", "6.3.10"),
+    "crimson_tusk": ("绯红獠牙", "6.3.10"),
+    "space": ("空间锚", "6.3.7"),
+    "shell": ("甲壳锚", "6.3.10"),
+    "prism": ("棱镜折射", "6.3.10"),
+    "deep_echo": ("回声锚", "6.3.8"),
+    "implosion": ("爆鸣锚", "6.3.4"),
+    "sulfur_core": ("核心锚", "6.3.10"),
+    "profession": ("职业锚", "6.3.11"),
+    "plume_echo": ("羽声回响", "6.3.8"),
+}
+
+ANCHOR_DEFS = {
+    # --- zombie family: 死亡锚 branch (6.3.1) -----------------------------
+    "zombie_death": dict(
+        name="死亡锚", behaviour="death_harvest",
+        watch="敌人的死亡", source="死亡产生「亡迹」",
+        trigger="任一敌人在自身 16 格内死亡",
+        combat="把敌死位置当作攻击节点，而不是追着敌人打",
+        ai="优先移动到最近的亡迹，而不是最近的敌人",
+        zone="多个亡迹可连成一条通路，路径上移动加快",
+        interact="玩家踩在亡迹上时，下一次攻击附带亡迹标记"),
+    "zombie_grave": dict(
+        name="墓穴锚", behaviour="corpse_anchor",
+        watch="尸体留下的地点与朝向", source="墓碑状「墓钉」",
+        trigger="伙伴经过任意尸体位置",
+        combat="守墓式站桩：在墓钉范围内攻击力不变但攻击范围外扩",
+        ai="不追击离开墓钉范围的目标，转为守住墓钉",
+        zone="每个墓钉为 4 格半径的己方地形",
+        interact="玩家可以在墓钉上休息，缩短伙伴下一次机制冷却"),
+    "zombie_desiccation": dict(
+        name="枯竭锚", behaviour="desiccation_field",
+        watch="敌人的剩余生命与增益状态", source="「干涸值」",
+        trigger="目标身上存在任何正面状态效果",
+        combat="不追加伤害，而是让目标的增益逐层失效",
+        ai="优先锁定携带增益的目标，无视距离更近的普通敌人",
+        zone="自身周围形成枯竭场，场内增益持续时间加速流失",
+        interact="玩家在枯竭场内喝下的药水持续时间减半但强度提升"),
+    "zombie_tide": dict(
+        name="亡潮锚", behaviour="tide_pursuit",
+        watch="连续击杀的时间间隔", source="「潮位」随连续击杀上涨",
+        trigger="两次击杀间隔小于 5 秒",
+        combat="潮位越高，伙伴的追击速度越快（追击而非伤害）",
+        ai="潮位高时不再回撤，持续追踪下一个目标",
+        zone="潮位满时在身周形成追猎路线，路径上的敌人被强制暴露",
+        interact="玩家沿追猎路线前进时获得同向加速"),
+    "zombie_bone_arrow": dict(
+        name="骨矢锚", behaviour="arrow_forecast",
+        watch="目标的移动向量", source="「预测落点」",
+        trigger="目标连续移动超过 1 秒",
+        combat="不射击当前位置，而是射击预判位置",
+        ai="优先选择直线移动的目标（更容易预测）",
+        zone="预测落点处生成悬浮箭符，进入该点的敌人被标记",
+        interact="玩家瞄准预测落点射箭时，箭矢会轻微自动校正"),
+    "zombie_frost_arrow": dict(
+        name="霜轨锚", behaviour="frost_trajectory",
+        watch="目标移动时留下的轨迹", source="「寒轨」",
+        trigger="目标在 3 秒内经过同一路段两次",
+        combat="沿寒轨发射的投射物附带冻结而非额外伤害",
+        ai="优先封锁敌人习惯走的通道",
+        zone="寒轨结成可滑行的冰面，己方在冰面上移动更快",
+        interact="玩家在冰面上滑行时伙伴同步提速"),
+    "zombie_wither_blade": dict(
+        name="凋刃锚", behaviour="blade_reap",
+        watch="敌人身上的负面状态层数", source="「凋零层数」",
+        trigger="目标身上叠有 3 层以上负面状态",
+        combat="对高负面层数目标改为处决式斩杀（阈值斩杀，非倍率）",
+        ai="只锁定已被削弱的目标，放弃满血敌人",
+        zone="斩杀成功后在原地留下凋刃领域",
+        interact="玩家攻击凋零领域内的敌人时触发一次额外凋零"),
+    "zombie_village_cycle": dict(
+        name="循环锚", behaviour="village_cycle",
+        watch="周围的植物生长与作物成熟", source="「循环值」",
+        trigger="附近有作物完成一次生长",
+        combat="把循环值转化为一次范围再生，而不是攻击",
+        ai="优先停留在农田 / 植被密集区域",
+        zone="循环值满时催熟周围作物",
+        interact="玩家收割作物会立刻补充伙伴的循环值"),
+    "zombie_gold_contract": dict(
+        name="金契锚", behaviour="gold_contract",
+        watch="敌人携带的掉落物与装备", source="「契约重量」",
+        trigger="目标身上存在任何装备或掉落物",
+        combat="优先掠夺而不是击杀：命中时夺取目标装备",
+        ai="锁定装备最好的敌人，而不是血量最低的",
+        zone="被夺走装备的敌人进入无甲状态",
+        interact="玩家拾取被夺取的装备时获得短时增益"),
+    "zombie_gold_flame": dict(
+        name="金焰锚", behaviour="gold_flame",
+        watch="被点燃的敌人数量", source="「灼印」",
+        trigger="任意敌人处于着火状态",
+        combat="火势在敌人之间传递，伙伴本身不输出额外伤害",
+        ai="优先攻击尚未着火的敌人以扩大火场",
+        zone="火场内的敌人无法隐去身形",
+        interact="玩家用火把点燃敌人时，灼印直接叠加两层"),
+
+    # --- arthropod family: 织命锚 branch (6.3.2) + 蜂巢 (6.3.6) ----------
+    "arthropod_hive": dict(
+        name="蜂巢锚", behaviour="hive",
+        watch="被标记的敌人数量与位置", source="「巢线」",
+        trigger="两个以上敌人被标记",
+        combat="在护主 / 治疗 / 控制之间自动切换，而不是固定输出",
+        ai="巢线连接成网络后，按网络中心决定站位",
+        zone="标记形成六边形巢网，网内的己方单位受到保护",
+        interact="玩家攻击某一目标时，该目标加入巢线网络"),
+    "arthropod_web_of_fate": dict(
+        name="织命锚", behaviour="web_of_fate",
+        watch="敌人的移动路径", source="「记忆丝」",
+        trigger="敌人重复走同一条路线",
+        combat="在预测路径上织网，而不是直接攻击",
+        ai="跟踪敌人在区域内的历史走位而非当前位置",
+        zone="记忆丝互相连接形成命运蛛网，网内敌人移动受限",
+        interact="玩家站上蛛网节点时扩大网的覆盖范围"),
+    "arthropod_venom_nest": dict(
+        name="毒巢锚", behaviour="venom_nest",
+        watch="中毒目标的位置", source="「巢毒」",
+        trigger="范围内中毒敌人达 3 个",
+        combat="把毒层聚合成一次范围毒爆，而非叠加伤害",
+        ai="优先向毒层最厚的位置移动",
+        zone="毒巢覆盖处的地面持续为踩踏者叠加毒层",
+        interact="玩家在巢上使用任意药水会转化为毒雾"),
+    "arthropod_shadow_mite": dict(
+        name="影螨锚", behaviour="shadow_mite",
+        watch="玩家背后与视野死角的空间", source="「影隙」",
+        trigger="有敌人进入玩家 120 度盲区",
+        combat="只攻击盲区内的目标，正面敌人完全放过",
+        ai="始终绕到目标的背面",
+        zone="自身周围影隙内的敌人被持续标记",
+        interact="玩家背对敌人时伙伴自动补位"),
+    "arthropod_burrow_swarm": dict(
+        name="潜地锚", behaviour="burrow_swarm",
+        watch="地面材质与可穿透方块", source="「潜地计数」",
+        trigger="自身站在软质方块（土 / 沙 / 泥）上",
+        combat="从地下突袭，命中不计伤害而是造成击飞",
+        ai="追击时始终选择软质地形的路径",
+        zone="可潜地的方块被转化为己方通道",
+        interact="玩家在软地质上潜行时伙伴同步潜行"),
+
+    # --- animal family: 狩猎锚 branch (6.3.5) ----------------------------
+    "animal_hunt": dict(
+        name="狩猎锚", behaviour="hunt",
+        watch="玩家与自身共同锁定的目标", source="「猎痕」",
+        trigger="玩家与伙伴攻击同一目标",
+        combat="猎痕累积到阈值召唤短暂幽影狼群，而不是提升攻击",
+        ai="始终与玩家锁定同一目标，绝不自行换目标",
+        zone="猎痕满时形成狩猎领域，领域内目标被公开标记",
+        interact="玩家持续攻击同一目标会加速猎痕累积"),
+    "animal_charge_horn": dict(
+        name="冲锋锚", behaviour="charge_horn",
+        watch="敌人与自身之间的连线", source="「冲势」",
+        trigger="与目标距离超过 8 格且视线通畅",
+        combat="直线冲锋撞击，造成强制位移而非伤害",
+        ai="优先选择成排站立的敌人，以获得更长的冲锋距离",
+        zone="冲锋路径被短暂开辟为无地形阻碍的通道",
+        interact="玩家沿冲锋同向前进时获得推力"),
+    "animal_spore": dict(
+        name="孢子锚", behaviour="spore",
+        watch="周围生物群系与湿度", source="「孢粉」",
+        trigger="附近存在植被或潮湿方块",
+        combat="释放孢子云雾，命中者被减速并被标记",
+        ai="优先在植被密集处交战",
+        zone="孢子云扩散为持续存在的领域，己方在云内回血",
+        interact="玩家破坏植被会一次性补充大量孢粉"),
+    "animal_tusk": dict(
+        name="獠牙锚", behaviour="tusk",
+        watch="目标的朝向与防御方向", source="「破防点」",
+        trigger="目标背对伙伴或正在攻击他人",
+        combat="只从破防点突刺，命中时忽略目标的格挡",
+        ai="绕后优先于正面迎击",
+        zone="破防点被刺穿后留下短暂缺口，己方可自由进出",
+        interact="玩家从同侧攻击时共享破防判定"),
+    "animal_wool": dict(
+        name="绒毛锚", behaviour="wool",
+        watch="己方单位受到的伤害类型", source="「绒层」",
+        trigger="任意己方单位受到伤害",
+        combat="不还手，转而把伤害转化为一层缓冲绒",
+        ai="始终站在玩家与最近的敌人之间",
+        zone="绒层覆盖范围内的己方单位受到伤害时按绒层数减伤",
+        interact="玩家受到攻击后绒层自动转移到玩家身上"),
+    "animal_plume_dance": dict(
+        name="羽舞锚", behaviour="plume_dance",
+        watch="自身羽毛颜色与周围地形颜色", source="「羽色伪装」",
+        trigger="自身颜色与环境色接近",
+        combat="在伪装状态下敌人无法锁定，伙伴可自由攻击",
+        ai="主动向颜色相近的地形移动",
+        zone="伪装区域内敌人失去目标",
+        interact="玩家穿着相近颜色护甲时同样获得伪装"),
+    "animal_moon_leap": dict(
+        name="月跃锚", behaviour="moon_leap",
+        watch="光照等级与月相", source="「月能」",
+        trigger="夜色或低光照环境",
+        combat="以跳跃位移代替追击，落点造成击退",
+        ai="夜间改为主动进攻，白天转为跟随",
+        zone="月能满时在落点形成短时跃迁点",
+        interact="玩家在夜间跟随伙伴跳跃会获得跳跃加成"),
+    "animal_night_prowl": dict(
+        name="夜猎锚", behaviour="night_prowl",
+        watch="敌人的视野方向与警戒状态", source="「潜行值」",
+        trigger="目标尚未发现自己",
+        combat="首次攻击从潜行状态发起，命中后强制解除目标警戒",
+        ai="始终维持潜行姿态直到进入攻击距离",
+        zone="潜行值覆盖范围随移动扩大",
+        interact="玩家潜行时共享潜行值"),
+    "animal_nine_lives": dict(
+        name="回援锚", behaviour="nine_lives",
+        watch="主人的生命比例", source="「命数」",
+        trigger="主人生命低于 40%",
+        combat="立即放弃当前目标回援，落地造成一次范围击退",
+        ai="任何情况下优先回到主人身边",
+        zone="回援落地位置形成短暂安全圈",
+        interact="玩家低血时伙伴自动标记该位置"),
+    "animal_jungle_stalk": dict(
+        name="丛影锚", behaviour="jungle_stalk",
+        watch="丛林植被的遮挡关系", source="「影迹」",
+        trigger="目标与自身之间存在植被遮挡",
+        combat="隔着植被发起攻击，命中不解除遮挡",
+        ai="永远选择有遮挡的路线接近目标",
+        zone="植被密集区视为己方隐蔽区",
+        interact="玩家藏在植被中时伙伴同步隐蔽"),
+    "animal_steady_hoof": dict(
+        name="稳健锚", behaviour="steady_hoof",
+        watch="脚下地形的高低差", source="「稳度」",
+        trigger="自身在非平坦地形上移动",
+        combat="不攻击，而是把稳度转化为一次地形踏平",
+        ai="主动走最平坦的路线护送主人",
+        zone="踏平后的路面为所有己方单位提供移动加速",
+        interact="玩家在踏平路面上骑行速度提升"),
+
+    # --- mount family: 骑乘锚 branch (6.3.5) -----------------------------
+    "mount_charge_horn": dict(
+        name="冲角锚", behaviour="charge_horn",
+        watch="冲锋路径上的敌人排布", source="「角势」",
+        trigger="路径上存在 3 个以上敌人",
+        combat="一次性贯穿冲撞，沿途敌人全部被推开",
+        ai="优先选择敌人最密集的方向",
+        zone="冲撞后路径变成己方跑道",
+        interact="玩家在跑道上骑行时不再被减速"),
+    "mount_steady_hoof": dict(
+        name="稳蹄锚", behaviour="steady_hoof",
+        watch="载具与主人的同步状态", source="「同步值」",
+        trigger="玩家骑乘中",
+        combat="骑乘状态下不主动攻击，改为稳定驾驶",
+        ai="完全服从玩家转向输入",
+        zone="同步值满时免疫击落",
+        interact="玩家骑乘时受到击退减半"),
+    "mount_burden": dict(
+        name="负重锚", behaviour="burden",
+        watch="自身与主人的背包重量", source="「负重值」",
+        trigger="背包接近满载",
+        combat="以负重换取撞击强度：越重撞得越远",
+        ai="满载时避开狭窄地形",
+        zone="负重值转化为一次性的重量领域，压低范围内所有跳跃",
+        interact="玩家可以主动向伙伴装载物品来提升负重值"),
+    "mount_sand_march": dict(
+        name="沙行锚", behaviour="sand_march",
+        watch="地面材质（沙 / 砾石）", source="「沙程」",
+        trigger="在沙质地形上长时间移动",
+        combat="扬沙致盲，命中者短时间内失去目标",
+        ai="主动沿沙地前进以积累沙程",
+        zone="沙程覆盖处形成沙墙，隔断敌人的远程视线",
+        interact="玩家在沙墙后远程攻击不会被反击"),
+    "mount_sky_dash": dict(
+        name="空冲锚", behaviour="sky_dash",
+        watch="自身高度与空中位置", source="「升力」",
+        trigger="自身处于离地状态",
+        combat="空中冲刺撞击，落地造成范围震动",
+        ai="优先选择有高度差的路线",
+        zone="落地震动范围视为己方控制区",
+        interact="玩家与伙伴同时起跳时升力共享"),
+
+    # --- snow / alpine family (6.3.9) ------------------------------------
+    "snow_snow_prowl": dict(
+        name="雪潜锚", behaviour="snow_prowl",
+        watch="雪地上的足迹", source="「雪迹」",
+        trigger="自身在雪层上移动",
+        combat="从足迹覆盖处发动突袭",
+        ai="始终沿自己留下的足迹返回",
+        zone="足迹区域为己方视野区",
+        interact="玩家沿足迹前进不会被敌人伏击"),
+    "snow_rock_roll": dict(
+        name="滚石锚", behaviour="rock_roll",
+        watch="斜坡方向与坡度", source="「滚动势能」",
+        trigger="自身位于下坡",
+        combat="沿坡滚落撞击，伤害与坡度无关而与滚动距离相关",
+        ai="主动寻找下坡路线发起攻击",
+        zone="滚落路径被压平为通道",
+        interact="玩家沿滚落路径滑行加速"),
+    "snow_bamboo": dict(
+        name="竹阵锚", behaviour="bamboo",
+        watch="竹类方块的分布", source="「竹节」",
+        trigger="周围存在竹子",
+        combat="在竹阵中高速穿行，命中不计伤害而是缠绕目标",
+        ai="只在竹阵范围内交战，离开则撤回",
+        zone="竹阵内己方单位获得隐蔽",
+        interact="玩家种植竹子会扩大竹阵"),
+    "snow_arctic_fang": dict(
+        name="极牙锚", behaviour="arctic_fang",
+        watch="目标的体温状态", source="「极寒层」",
+        trigger="目标处于寒冷生物群系",
+        combat="咬合时叠加极寒层，层满则冻结而非追加伤害",
+        ai="把目标推离热源",
+        zone="极寒层扩散为冻结区",
+        interact="玩家用雪球命中目标可叠加一层极寒"),
+    "snow_mountain_horn": dict(
+        name="山峦锚", behaviour="mountain_horn",
+        watch="高度与山体遮挡", source="「回响值」",
+        trigger="自身处于高海拔",
+        combat="以吼叫造成范围击退并揭露隐形目标",
+        ai="优先占据高地",
+        zone="山峦回响覆盖的山顶为己方据点",
+        interact="玩家站在据点内攻击力不变但视野扩大"),
+
+    # --- environment family: 青蛙环境锚 (6.3.9) --------------------------
+    "environment_warm_spring": dict(
+        name="暖泉锚", behaviour="warm_spring",
+        watch="环境温度与水源", source="「热汽」",
+        trigger="附近存在水源或高温方块",
+        combat="蒸腾汽雾遮蔽视线，命中者被推离",
+        ai="始终在水边交战",
+        zone="暖泉区域内的己方单位持续恢复",
+        interact="玩家在水边战斗时恢复效果加倍"),
+    "environment_grass_echo": dict(
+        name="草回锚", behaviour="grass_echo",
+        watch="脚下的植被与草地覆盖", source="「草回声」",
+        trigger="自身在草地 / 苔藓上移动",
+        combat="把草回声转化为范围缠绕，命中者无法冲刺",
+        ai="沿植被最密的路线移动",
+        zone="草回声覆盖区为己方隐蔽区",
+        interact="玩家在草地上潜行时伙伴同步隐蔽"),
+    "environment_frost_leap": dict(
+        name="寒跃锚", behaviour="frost_leap",
+        watch="可冻结的液体表面", source="「冻点」",
+        trigger="跳跃落点附近存在水或岩浆",
+        combat="落点冻结液体，把敌人困住而非造成伤害",
+        ai="优先跳到液体附近",
+        zone="冻结后的表面成为己方可通行地形",
+        interact="玩家踩上冻结表面不会滑倒"),
+    "environment_biome_orb": dict(
+        name="群系锚", behaviour="biome_orb",
+        watch="当前生物群系的类型", source="「群系球」随群系切换形态",
+        trigger="玩家进入新的生物群系",
+        combat="群系球的形态决定战斗方式（温带缠绕 / 寒冷冻结 / 暖热蒸发）",
+        ai="跟随玩家所在群系改变行为",
+        zone="群系球覆盖处地形被短暂改写为当前群系",
+        interact="玩家在不同群系与伙伴交互会得到不同回应"),
+
+    # --- aquatic family (6.3.9) ------------------------------------------
+    "aquatic_echo_sense": dict(
+        name="回响锚", behaviour="echo_sense",
+        watch="水中的声音与声呐反射", source="「可视声纹」",
+        trigger="任何生物在水中移动或受到攻击",
+        combat="不直接攻击，而是把声音来源可视化供队友打击",
+        ai="优先向声纹最密集处移动",
+        zone="回声领域内所有重要声音暴露来源",
+        interact="玩家受到偷袭时释放一次定位波"),
+    "aquatic_tide_shell": dict(
+        name="潮甲锚", behaviour="tide_shell",
+        watch="水域的潮位与深度", source="「潮层」",
+        trigger="自身处于水中",
+        combat="把潮层转化为一次性甲壳，抵挡而非反击",
+        ai="始终待在水域内",
+        zone="潮层覆盖处水压增加，敌人进入后被减速",
+        interact="玩家在水中与伙伴同游时获得水下呼吸的补充"),
+    "aquatic_deep_ink": dict(
+        name="深墨锚", behaviour="deep_ink",
+        watch="敌人的视线方向", source="「墨量」",
+        trigger="敌人正在锁定己方单位",
+        combat="喷墨致盲，被致盲者失去目标",
+        ai="优先向锁定主人的敌人喷射",
+        zone="墨云覆盖范围为己方绝对隐蔽区",
+        interact="玩家在墨云内不会被远程锁定"),
+    "aquatic_current_dash": dict(
+        name="洋流锚", behaviour="current_dash",
+        watch="水流方向", source="「洋流值」",
+        trigger="自身处于流动的水中",
+        combat="顺流冲刺撞击，逆流时改为驻守",
+        ai="永远顺着水流方向选择交战路线",
+        zone="洋流路径为己方快速通道",
+        interact="玩家顺流移动时伙伴提速同步"),
+    "aquatic_spine_guard": dict(
+        name="棘刺锚", behaviour="spine_guard",
+        watch="接近己方的敌人数量", source="「棘层」",
+        trigger="3 个以上敌人进入 6 格范围",
+        combat="展开棘刺，敌人攻击时反噬（反射而非伤害加成）",
+        ai="只在被包围时展开，平时保持跟随",
+        zone="棘刺覆盖范围为拒止区，敌人进入被持续推开",
+        interact="玩家站在拒止区内受到的反伤减半"),
+    "aquatic_school_charge": dict(
+        name="群游锚", behaviour="school_charge",
+        watch="同族单位的数量", source="「群势」",
+        trigger="附近存在同类伙伴",
+        combat="群势越高，冲阵造成的击退越远（不提升伤害）",
+        ai="始终与同族单位保持队形",
+        zone="群游队形覆盖处为己方阵型区",
+        interact="玩家站在阵型中心时获得队形保护"),
+    "aquatic_coral_scale": dict(
+        name="珊瑚锚", behaviour="coral_scale",
+        watch="周围珊瑚与暖水方块", source="「珊瑚鳞」",
+        trigger="附近存在珊瑚",
+        combat="鳞片按珊瑚颜色变化，抵挡对应元素的伤害",
+        ai="优先靠近与自己鳞色一致的珊瑚",
+        zone="珊瑚区域视为己方疗养区",
+        interact="玩家在珊瑚区采集不会惊动伙伴"),
+    "aquatic_regeneration_gill": dict(
+        name="再生锚", behaviour="regeneration_gill",
+        watch="己方单位缺失的生命", source="「鳃息」",
+        trigger="任意己方单位生命低于一半",
+        combat="不攻击，持续把鳃息转化为范围再生",
+        ai="始终贴近血量最低的己方单位",
+        zone="鳃息范围内持续恢复且不会被水流冲散",
+        interact="玩家在鳃息范围内复活虚弱的伙伴更快"),
+
+    # --- construct family (6.3.10) ---------------------------------------
+    "construct_guardian_watch": dict(
+        name="守望锚", behaviour="guardian_watch",
+        watch="被保护目标的移动范围", source="「守望半径」",
+        trigger="被保护者离开既定区域",
+        combat="拦截一切进入守望半径的敌人（拦截而非输出）",
+        ai="自身几乎不移动，只在守望半径内巡逻",
+        zone="守望半径为不可侵犯区",
+        interact="玩家可以在守望半径内指定新的保护点"),
+    "construct_city_wall": dict(
+        name="城墙锚", behaviour="city_wall",
+        watch="可建造的方块与地形", source="「墙体结构」",
+        trigger="周围存在可放置方块",
+        combat="不攻击，把地形改造为墙体阻隔敌人",
+        ai="沿墙巡逻，遇敌绕墙而不是穿过",
+        zone="墙体为完全隔断，敌人必须绕行",
+        interact="玩家可以拆除墙体回收材料"),
+
+    # --- nether / end family (6.3.4 / 6.3.7 / 6.3.8 / 6.3.10) -----------
+    "nether_end_space": dict(
+        name="空间锚", behaviour="space",
+        watch="玩家和战场的空间位置", source="「空间节点」",
+        trigger="玩家记录了一个安全位置",
+        combat="建立三点空间网络，进行有限度安全换位而非瞬移攻击",
+        ai="持续维护三个节点的连接关系",
+        zone="节点覆盖范围为可换位区",
+        interact="玩家可以在节点之间有限度换位"),
+    "nether_end_deep_echo": dict(
+        name="回声锚", behaviour="deep_echo",
+        watch="脚步 / 碰撞 / 投掷 / 生物移动 / 环境声音", source="「可视声纹」",
+        trigger="任何声音事件发生",
+        combat="不攻击，把所有声音来源可视化并共享给队友",
+        ai="优先向最近的声音事件移动",
+        zone="回声领域内所有重要声音暴露来源",
+        interact="玩家受到偷袭时释放一次定位波"),
+    "nether_end_elastic": dict(
+        name="弹性锚", behaviour="elastic",
+        watch="碰撞的方向与速度", source="「弹性能」",
+        trigger="自身发生碰撞",
+        combat="按碰撞方向反弹，反弹路径上的敌人被推开",
+        ai="主动撞向方块以积累弹性能",
+        zone="反弹路径形成弹跳通道",
+        interact="玩家与伙伴碰撞时同样获得弹力"),
+    "nether_end_magma_core": dict(
+        name="熔核锚", behaviour="magma_core",
+        watch="周围的热量与火焰", source="「熔核温度」",
+        trigger="附近存在火源或高温方块",
+        combat="吸收热量后释放非破坏性热浪",
+        ai="优先靠近热源",
+        zone="熔核覆盖处地面持续高温，敌对单位被烫伤",
+        interact="玩家在熔核内不会被岩浆伤害"),
+    "nether_end_sun_flare": dict(
+        name="日耀锚", behaviour="sun_flare",
+        watch="光照强度与天空暴露度", source="「耀斑值」",
+        trigger="头顶无遮挡且为白天",
+        combat="释放致盲耀斑，被致盲者短暂失控",
+        ai="优先占据天空开阔处",
+        zone="耀斑范围内敌人无法瞄准",
+        interact="玩家站在耀斑中心时远程攻击必中"),
+    "nether_end_wail": dict(
+        name="哀鸣锚", behaviour="wail",
+        watch="敌人的听觉反应", source="「声场」",
+        trigger="敌人靠近己方据点",
+        combat="以哀鸣声场驱散敌人（驱散而非伤害）",
+        ai="用声音把敌人赶向指定方向",
+        zone="声场覆盖处敌人被迫远离",
+        interact="玩家可以在声场内指定驱散方向"),
+    "nether_end_lava_stride": dict(
+        name="熔行锚", behaviour="lava_stride",
+        watch="岩浆与热液方块", source="「踏行点」",
+        trigger="自身踩在岩浆上",
+        combat="在岩浆面上高速移动并撞击敌人",
+        ai="把岩浆面当作主要移动通道",
+        zone="岩浆面被转化为己方通路",
+        interact="玩家跟随伙伴走过岩浆面时获得短时防火"),
+    "nether_end_crimson_tusk": dict(
+        name="绯牙锚", behaviour="crimson_tusk",
+        watch="目标的击退抗性", source="「绯红势能」",
+        trigger="目标被击退",
+        combat="撞击造成连续击退（位移控制而非伤害）",
+        ai="优先攻击能被击退的目标，跳过抗性目标",
+        zone="被击退路径之上形成绯红通道",
+        interact="玩家沿同一方向推挤时效果叠加"),
+    "nether_end_shell": dict(
+        name="甲壳锚", behaviour="shell",
+        watch="背上的骑乘者状态", source="「甲层」",
+        trigger="身上载有单位",
+        combat="载人状态下防御提升但不再主动攻击",
+        ai="始终朝向敌人以保护背上的单位",
+        zone="甲壳覆盖处为安全落脚点",
+        interact="玩家站在甲壳上不会被击退"),
+    "nether_end_prism": dict(
+        name="棱镜锚", behaviour="prism",
+        watch="照射到自身的光线角度", source="「折射值」",
+        trigger="自身被任意光源照射",
+        combat="把光线折射出去攻击路径上的敌人（借用环境而非自伤）",
+        ai="主动移动到光源与敌人之间的位置",
+        zone="折射路径被点亮，敌人无法隐蔽",
+        interact="玩家用光源照射伙伴可指定折射方向"),
+
+    # --- special family (6.3.4 / 6.3.10 / 6.3.11) ------------------------
+    "special_implosion": dict(
+        name="爆鸣锚", behaviour="implosion",
+        watch="冲击 / 击退 / 碰撞 / 爆炸震动", source="「震荡能量」",
+        trigger="任一上述事件发生",
+        combat="释放非破坏性冲击波，只位移不破坏地形",
+        ai="主动制造碰撞事件以蓄能",
+        zone="冲击波覆盖范围为击退区",
+        interact="玩家在冲击波内不会被击倒"),
+    "special_sulfur_core": dict(
+        name="核心锚", behaviour="sulfur_core",
+        watch="战场上发生的所有事件", source="「核心吸收」",
+        trigger="任意事件在附近发生",
+        combat="按吸收到的事件类型自动切换战斗方式",
+        ai="不做固定决策，完全由吸收内容驱动",
+        zone="核心覆盖处地形随吸收内容改变",
+        interact="玩家主动向核心投喂方块会改变其形态"),
+    "special_profession": dict(
+        name="职业锚", behaviour="profession",
+        watch="职业对应的生产流程", source="「职业资源」",
+        trigger="玩家完成一次对应职业行为",
+        combat="不直接战斗，把职业资源转化为辅助效果",
+        ai="驻留在对应的功能方块附近",
+        zone="职业区域为己方补给点",
+        interact="玩家在补给点内获得对应职业的增益"),
+    "special_plume_echo": dict(
+        name="羽声锚", behaviour="plume_echo",
+        watch="周围声音的音高与节奏", source="「回响羽片」",
+        trigger="环境音量超过阈值",
+        combat="把声音转化为羽片弹幕，命中造成失谐",
+        ai="跟随声音来源移动并对齐节奏",
+        zone="羽声覆盖处声音被放大，敌人无法潜行接近",
+        interact="玩家在羽声范围内喊话会强化伙伴的下一次机制"),
+}
+
+# family -> ordered anchor suffix list. Ordered so the round-robin in
+# build_forms() spreads anchors evenly; each suffix must exist in
+# ANCHOR_DEFS as f"{family}_{suffix}".
 ANCHORS = {
-    "zombie": ["death", "grave", "desiccation", "tide", "bone_arrow", "frost_arrow",
-               "wither_blade", "village_cycle", "gold_contract", "gold_flame"],
-    "arthropod": ["web_of_fate", "venom_nest", "shadow_mite", "burrow_swarm", "hive"],
-    "animal": ["charge_horn", "spore", "tusk", "wool", "plume_dance", "moon_leap",
-               "night_prowl", "nine_lives", "jungle_stalk", "hunt", "steady_hoof"],
-    "mount": ["charge_horn", "steady_hoof", "burden", "sand_march", "sky_dash"],
-    "snow": ["rock_roll", "bamboo", "arctic_fang", "mountain_horn", "snow_prowl"],
-    "environment": ["biome_orb", "warm_spring", "grass_echo", "frost_leap"],
-    "aquatic": ["tide_shell", "echo_sense", "deep_ink", "current_dash", "spine_guard",
-                "school_charge", "coral_scale", "regeneration_gill"],
-    "construct": ["city_wall", "snowball", "guardian_watch"],
-    "nether_end": ["elastic", "magma_core", "sun_flare", "wail", "lava_stride",
-                   "crimson_tusk", "space", "shell", "prism", "deep_echo"],
-    "special": ["implosion", "sulfur_core", "profession", "plume_echo"],
+    "zombie": [k[len("zombie_"):] for k in ANCHOR_DEFS if k.startswith("zombie_")],
+    "arthropod": [k[len("arthropod_"):] for k in ANCHOR_DEFS if k.startswith("arthropod_")],
+    "animal": [k[len("animal_"):] for k in ANCHOR_DEFS if k.startswith("animal_")],
+    "mount": [k[len("mount_"):] for k in ANCHOR_DEFS if k.startswith("mount_")],
+    "snow": [k[len("snow_"):] for k in ANCHOR_DEFS if k.startswith("snow_")],
+    "environment": [k[len("environment_"):] for k in ANCHOR_DEFS if k.startswith("environment_")],
+    "aquatic": [k[len("aquatic_"):] for k in ANCHOR_DEFS if k.startswith("aquatic_")],
+    "construct": [k[len("construct_"):] for k in ANCHOR_DEFS if k.startswith("construct_")],
+    "nether_end": [k[len("nether_end_"):] for k in ANCHOR_DEFS if k.startswith("nether_end_")],
+    "special": [k[len("special_"):] for k in ANCHOR_DEFS if k.startswith("special_")],
 }
 
 # ---------------------------------------------------------------------------
@@ -788,6 +1418,11 @@ def build():
         pid, pname, pdesc = passive_for(entity, variant)
         anchor_pool = ANCHORS.get(fam, ["reserved"])
         anchor = f"{fam}_{anchor_pool[(nid - 1) % len(anchor_pool)]}"
+        anchor_def = ANCHOR_DEFS.get(anchor)
+        if anchor_def is None:
+            # reserved band (11.2.3): parsed but never registered, so it needs
+            # no anchor definition.
+            anchor_def = {"behaviour": "reserved"}
 
         geometry = GEOMETRY.get(fam, "beast_ring")
         particle = PARTICLES.get(fam, "golem_covenant:soul_ash")
@@ -828,6 +1463,9 @@ def build():
             "bPassiveId": pid,
             "bPassiveName": pname,
             "anchorId": anchor,
+            "anchorBehaviour": anchor_def["behaviour"],
+            "anchorRef": ANCHOR_BEHAVIOURS.get(
+                anchor_def["behaviour"], ("", ""))[1],
             "cUpgrade": c_blob,
             "cSecond": second_name,
             "cSecondId": second_key,
@@ -875,6 +1513,30 @@ def build():
         "reserved": sum(1 for f in forms if f["status"] == "reserved"),
         "secondMechanicPool": {k: {"name": v[0], "desc": v[1]}
                                for k, v in SECOND_MECHANICS.items()},
+        # 第六章: the anchor table. Each entry carries the seven textual
+        # dimensions from spec 6.2 plus the runtime behaviour keyword; the
+        # remaining two dimensions (死亡遗志 / 仪式结构) live on the form rows.
+        "anchors": {
+            aid: {
+                "name": d["name"],
+                "familyId": aid.rsplit("_", 1)[0]
+                if aid.rsplit("_", 1)[0] in ANCHORS else aid.split("_")[0],
+                "behaviour": d["behaviour"],
+                "specRef": ANCHOR_BEHAVIOURS[d["behaviour"]][1],
+                "watch": d["watch"],
+                "source": d["source"],
+                "trigger": d["trigger"],
+                "combat": d["combat"],
+                "ai": d["ai"],
+                "zone": d["zone"],
+                "interact": d["interact"],
+            }
+            for aid, d in ANCHOR_DEFS.items()
+        },
+        "anchorBehaviours": {
+            k: {"name": v[0], "specRef": v[1]}
+            for k, v in ANCHOR_BEHAVIOURS.items()
+        },
         "forms": forms,
     }
     os.makedirs(os.path.dirname(OUT), exist_ok=True)

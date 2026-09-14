@@ -65,6 +65,17 @@ public final class ModParticles {
 		return Optional.ofNullable(BY_FAMILY.get(familyId));
 	}
 
+	/**
+	 * A family's particle, falling back to {@code fallback} when the family is
+	 * unknown or has not been registered yet. Used by the anchor runtime, which
+	 * must never fail just because a particle is missing (spec 11.1.3).
+	 */
+	public static SimpleParticleType familyOr(String familyId,
+			SimpleParticleType fallback) {
+		SimpleParticleType t = BY_FAMILY.get(familyId);
+		return t != null ? t : fallback;
+	}
+
 	public static List<SimpleParticleType> all() {
 		return List.copyOf(ALL);
 	}
