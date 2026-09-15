@@ -9,17 +9,24 @@ import org.slf4j.LoggerFactory;
 import com.example.golem_covenant.anchor.AnchorRuntime;
 import com.example.golem_covenant.anchor.Anchors;
 import com.example.golem_covenant.bond.BondEngine;
+import com.example.golem_covenant.command.GolemCommand;
 import com.example.golem_covenant.compat.GolemizationCompat;
 import com.example.golem_covenant.data.FormsRegistry;
 import com.example.golem_covenant.death.DeathWillEngine;
 import com.example.golem_covenant.item.ModItems;
 import com.example.golem_covenant.network.ModNetworking;
+import com.example.golem_covenant.network.RitualNetworking;
 import com.example.golem_covenant.registry.ModAttachments;
+import com.example.golem_covenant.registry.ModBlockEntities;
+import com.example.golem_covenant.registry.ModBlocks;
+import com.example.golem_covenant.registry.ModComponents;
 import com.example.golem_covenant.registry.ModParticles;
 import com.example.golem_covenant.registry.ModSounds;
 import com.example.golem_covenant.ritual.RitualEngine;
 import com.example.golem_covenant.summon.SummonManager;
 import com.example.golem_covenant.team.ResonanceEngine;
+import com.example.golem_covenant.trial.SecondSoulTrial;
+import com.example.golem_covenant.trial.TaskObserver;
 
 /**
  * 傀儡契约 / Golem Covenant - addon entrypoint.
@@ -52,11 +59,23 @@ public class GolemCovenantMod implements ModInitializer {
 		FormsRegistry.bindAgainstCompat();
 
 		// 3. Registries.
+		// spec 3.2: data components come first - an item's Properties may
+		// reference one from its own static initialiser, so the component has
+		// to exist before ModItems' statics run.
+		ModComponents.register();
 		ModParticles.register();
 		ModSounds.register();
 		ModAttachments.register();
 		ModItems.register();
+		// spec 4.3.1 / 4.3.2: blocks, then their block entities. The order is
+		// load-bearing - a BlockEntityType is built with the Blocks it is valid
+		// for, so the blocks must already be in the registry.
+		ModBlocks.register();
+		ModBlockEntities.register();
 		ModNetworking.register();
+		// spec 13.1: the client's quality / ritual-toggle wishes are received
+		// here, since the server is what actually emits the particles.
+		RitualNetworking.register();
 
 		// 4. Engines.
 		SummonManager.register();
@@ -66,8 +85,15 @@ public class GolemCovenantMod implements ModInitializer {
 		ResonanceEngine.register();
 		// spec ch.6: the anchor runtime drives every companion's behaviour.
 		AnchorRuntime.register();
+		// spec 4.3.2: the five partner tasks have no observer without this, and
+		// spec 11.8 clause 4/5 need their own event hooks.
+		TaskObserver.register();
+		SecondSoulTrial.register();
 
-		// 5. Session state must not leak across worlds (spec 11.14).
+		// 5. Commands (spec 11.9.3 / 11.10.4 / 13.1).
+		GolemCommand.register();
+
+		// 6. Session state must not leak across worlds (spec 11.14).
 		net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents
 				.SERVER_STOPPED.register(server -> {
 					DeathWillEngine.onServerStopped();
@@ -76,7 +102,15 @@ public class GolemCovenantMod implements ModInitializer {
 					BondEngine.onServerStopped();
 					ResonanceEngine.onServerStopped();
 					AnchorRuntime.onServerStopped();
+					TaskObserver.onServerStopped();
+					SecondSoulTrial.onServerStopped();
 				});
+
+		// spec 13.1: push the resolved settings on join, so the HUD and the
+		// settings screen never open on a stale value.
+		net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents.JOIN
+				.register((handler, sender, server) -> RitualNetworking
+						.syncTo(handler.getPlayer()));
 
 		if (baseModPresent) {
 			LOGGER.info("傀儡契约 loaded - base mod '{}' detected, {} forms "

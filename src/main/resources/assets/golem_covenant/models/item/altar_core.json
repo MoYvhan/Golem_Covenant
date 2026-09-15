@@ -1,6 +1,3 @@
 {
-  "parent": "minecraft:item/generated",
-  "textures": {
-    "layer0": "golem_covenant:item/altar_core"
-  }
+  "parent": "minecraft:item/echo_shard"
 }

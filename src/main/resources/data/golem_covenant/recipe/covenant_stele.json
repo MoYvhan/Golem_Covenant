@@ -1,0 +1,20 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "group": "golem_covenant_block",
+  "pattern": [
+    "PGP",
+    "BSB",
+    "SSS"
+  ],
+  "key": {
+    "P": "minecraft:polished_blackstone",
+    "G": "minecraft:gold_block",
+    "B": "minecraft:polished_blackstone_bricks",
+    "S": "minecraft:stone_bricks"
+  },
+  "result": {
+    "id": "golem_covenant:covenant_stele",
+    "count": 1
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "group": "golem_covenant_block",
+  "pattern": [
+    "COC",
+    "OSO",
+    "OOO"
+  ],
+  "key": {
+    "C": "minecraft:crying_obsidian",
+    "O": "minecraft:obsidian",
+    "S": "minecraft:soul_soil"
+  },
+  "result": {
+    "id": "golem_covenant:soul_altar",
+    "count": 1
+  }
+}

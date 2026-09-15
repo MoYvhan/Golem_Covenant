@@ -1,6 +1,3 @@
 {
-  "parent": "minecraft:item/generated",
-  "textures": {
-    "layer0": "golem_covenant:item/capacity_shard"
-  }
+  "parent": "minecraft:item/amethyst_shard"
 }

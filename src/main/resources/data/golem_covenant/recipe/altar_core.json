@@ -1,0 +1,14 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "category": "misc",
+  "group": "golem_covenant_expansion",
+  "ingredients": [
+    "minecraft:echo_shard",
+    "minecraft:gold_block",
+    "minecraft:echo_shard"
+  ],
+  "result": {
+    "id": "golem_covenant:altar_core",
+    "count": 1
+  }
+}

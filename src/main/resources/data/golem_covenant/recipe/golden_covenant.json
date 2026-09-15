@@ -1,0 +1,12 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "category": "misc",
+  "group": "golem_covenant_tier",
+  "ingredients": [
+    "minecraft:golden_apple"
+  ],
+  "result": {
+    "id": "golem_covenant:golden_covenant",
+    "count": 1
+  }
+}

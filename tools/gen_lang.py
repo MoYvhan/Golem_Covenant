@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -34,22 +35,60 @@ ITEMS = {
     "altar_core": ("Soul Altar Core", "灵魂圣坛核心"),
 }
 
+# spec 4.3.1 / 4.3.2: the two expansion blocks. Blocks need their own
+# `block.golem_covenant.*` namespace - the game does not fall back to the
+# item key, so without these the block item shows its raw id in the inventory.
+BLOCKS = {
+    "covenant_stele": ("Covenant Stele", "契约石碑"),
+    "soul_altar": ("Soul Altar", "灵魂圣坛"),
+}
+
+# Item tooltips (spec 11.13 namespace: golem_covenant.tooltip.*).
+#
+# These used to live under `tooltip.golem_covenant.*` while CovenantItem.java
+# asked for `golem_covenant.tooltip.*`, so every covenant item showed raw keys.
+# validate_lang.py now makes that class of mismatch a build failure.
 ITEM_TOOLTIP = {
-    "tooltip.golem_covenant.tier_a": (
+    "golem_covenant.tooltip.tier_a": (
         "Borrowing a soul - 10 minutes only.",
         "借魂 - 仅存续 10 分钟。"),
-    "tooltip.golem_covenant.tier_b": (
+    "golem_covenant.tooltip.tier_b": (
         "Awakened soul - permanent companion.",
         "灵魂觉醒 - 永久伙伴。"),
-    "tooltip.golem_covenant.tier_c": (
+    "golem_covenant.tooltip.tier_c": (
         "Full covenant - carries a death will.",
         "灵魂圣契 - 携带死亡遗志。"),
-    "tooltip.golem_covenant.requires_golemized": (
+    # spec 11.9.3: the tooltip must state the soul load and the slot range,
+    # so a player can plan a team from the item alone.
+    "golem_covenant.tooltip.soul_load": (
+        "Soul load: %s", "占用灵魂：%s"),
+    "golem_covenant.tooltip.slots": (
+        "Slots: %s (up to %s)", "契约位：%s（上限 %s）"),
+    "golem_covenant.tooltip.has_will": (
+        "Carries a death will.", "携带有死亡遗志。"),
+    "golem_covenant.tooltip.requires_golemized": (
         "Use on a copperized creature.",
         "对已傀儡化的生物使用。"),
-    "tooltip.golem_covenant.shift_for_details": (
-        "Hold Shift for the full covenant.",
-        "按住 Shift 查看完整契约。"),
+    # 26.2 gives the tooltip no key state (TooltipFlag carries only advanced /
+    # creative), so the expand trigger is the F3+H detail toggle rather than
+    # the older "hold Shift" convention. The key must match the code or the
+    # hint sends players looking for a key that does nothing.
+    "golem_covenant.tooltip.shift_for_details": (
+        "F3+H shows the full covenant.",
+        "按 F3+H 查看完整契约。"),
+    # spec 11.13: the attuned form's ritual circle and its four abilities.
+    "golem_covenant.tooltip.ritual": (
+        "Ritual: %s", "法阵：%s"),
+    "golem_covenant.tooltip.ability": (
+        "%s: %s", "%s：%s"),
+    "golem_covenant.tooltip.ability.b_active": (
+        "Active", "主动"),
+    "golem_covenant.tooltip.ability.b_passive": (
+        "Passive", "被动"),
+    "golem_covenant.tooltip.ability.c_second": (
+        "Second Mechanism", "第二机制"),
+    "golem_covenant.tooltip.ability.death_will": (
+        "Death Will", "死亡遗志"),
 }
 
 MESSAGES = {
@@ -104,6 +143,53 @@ MESSAGES = {
     "msg.bond_stage": (
         "Bond with %s: %s (%s)",
         "与 %s 的契合度：%s（%s）"),
+    # spec 4.3.1 / 4.3.2 block interactions. Kept as messages rather than a
+    # GUI because a slot grant is a one-line outcome, and a screen for it would
+    # be more ceremony than the feature needs.
+    "msg.stele_rite_started": (
+        "The stele's rite has begun. Hold the circle.",
+        "石碑仪式已启动，请守住法阵。"),
+    "msg.stele_rite_running": (
+        "This stele is already running a rite.",
+        "该石碑的仪式尚未结束。"),
+    "msg.stele_at_max": (
+        "A-tier slots are already at the cap (%s).",
+        "A 级契约位已达上限（%s）。"),
+    "msg.stele_rite_done": (
+        "The rite completes: +1 A-tier slot.",
+        "仪式完成：A 级契约位 +1。"),
+    "msg.altar_no_materials": (
+        "Seats come from partner tasks, not from offered materials.",
+        "灵魂席位来自伙伴任务，而非献上的材料。"),
+    "msg.altar_seat_granted": (
+        "A soul seat opens: B-tier slots now %s.",
+        "灵魂席位开启：B 级契约位现为 %s。"),
+    # spec 11.8 clause 2/3: the altar's offering bowl. Deposits are reported
+    # on every click because the shard count is the trial's only slow-moving
+    # counter, and a silent deposit reads as a lost item.
+    "msg.altar_shard_deposited": (
+        "Offering accepted: %s / %s capacity shards.",
+        "祭品已接受：契约容量碎片 %s / %s。"),
+    "msg.altar_offering_full": (
+        "The offering is already complete (%s shards).",
+        "祭品已集齐（%s 个碎片）。"),
+    "msg.altar_activated": (
+        "The Soul Altar awakens. The second soul rite may begin.",
+        "灵魂圣坛已苏醒，第二灵魂仪式可以开始了。"),
+    # spec 11.8 clause 5: the grand rite. Each outcome is a separate key
+    # because the three failure modes need different player actions.
+    "msg.grand_rite_started": (
+        "The grand rite begins: %s companions of different anchors are offered.",
+        "大型仪式开始：%s 种不同锚点的伙伴正被献上。"),
+    "msg.grand_rite_need_more": (
+        "The rite needs %s nearby B-tier companions of different anchors.",
+        "仪式需要 %s 个不同锚点、且位于附近的 B 级伙伴。"),
+    "msg.grand_rite_running": (
+        "A grand rite is already running here.",
+        "此处的大型仪式尚未结束。"),
+    "msg.grand_rite_done": (
+        "The grand rite has already been completed.",
+        "大型仪式已经完成过了。"),
 }
 
 DEATH_WILL_MSG = {
@@ -164,13 +250,142 @@ HUD = {
     "hud.will_armed": ("Will armed", "遗志就绪"),
 }
 
+# The /golem command tree (spec 11.9.3 / 11.10.4 / 13.1).
+#
+# Keys are `cmd.*` to match GolemCommand.java. The earlier `command.golem.*`
+# block described a command tree that was never registered, so it was dead
+# text; it is replaced here by the keys the command actually sends.
 COMMANDS = {
-    "command.golem.covenant.list": ("List your covenants", "列出你的契约"),
-    "command.golem.covenant.info": ("Inspect a companion", "查看伙伴详情"),
-    "command.golem.covenant.release": ("Release a covenant", "解除契约"),
-    "command.golem.covenant.survey": ("Show the compat survey", "显示兼容性勘察"),
-    "command.golem.covenant.none": ("No covenants found.", "未找到契约。"),
-    "command.golem.covenant.listed": ("Covenant list sent.", "契约列表已发送。"),
+    # --- shared / failure ------------------------------------------------
+    "cmd.players_only": ("Only a player can use this command.",
+                         "只有玩家可以使用此命令。"),
+    "cmd.bad_value": ("'%s' is not valid here; expected %s",
+                      "「%s」不是有效取值；应为 %s"),
+    "cmd.set_ok": ("%s -> %s", "%s -> %s"),
+    # --- headers ---------------------------------------------------------
+    "cmd.header": ("=== Golem Covenant ===", "=== 傀儡契约 ==="),
+    "cmd.capacity_header": ("=== Soul capacity ===", "=== 灵魂容量 ==="),
+    "cmd.anchor_header": ("=== Companion anchors ===", "=== 伙伴灵魂锚点 ==="),
+    "cmd.anchor_list_header": ("=== Anchor codex ===", "=== 锚点图鉴 ==="),
+    "cmd.bond_header": ("=== Bond ===", "=== 契合度 ==="),
+    "cmd.resonance_header": ("=== Anchor resonance ===", "=== 锚点共鸣 ==="),
+    "cmd.settings_header": ("=== Ritual settings ===", "=== 法阵设置 ==="),
+    # --- covenant / capacity --------------------------------------------
+    "cmd.slots": ("  %s slots: %s", "  %s 契约位：%s"),
+    "cmd.soul_pool": ("  Soul capacity: %s", "  灵魂容量：%s"),
+    "cmd.capacity_row": ("  %s [%s] - %s soul",
+                         "  %s [%s] - 占用 %s"),
+    "cmd.no_companions": ("  (no companions)", "  （暂无伙伴）"),
+    # --- anchors ---------------------------------------------------------
+    "cmd.anchor_row": ("  %s -> %s (depth %s)",
+                       "  %s -> %s（深度 %s）"),
+    "cmd.anchor_family": ("  %s: %s anchors", "  %s：%s 个锚点"),
+    "cmd.anchor_total": ("  total %s anchors, %s tracked companions",
+                         "  共 %s 个锚点，正在追踪 %s 个伙伴"),
+    "cmd.anchor_list_row": ("  %s - %s", "  %s - %s"),
+    "cmd.unknown_family": ("Unknown family '%s'.",
+                           "未知族群「%s」。"),
+    # --- bond / resonance -----------------------------------------------
+    "cmd.bond_row": ("  %s bond %s, depth %s",
+                     "  %s 契合 %s，深度 %s"),
+    "cmd.resonance_none": ("  (no resonance active)", "  （无共鸣生效）"),
+    "cmd.resonance_row": ("  %s", "  %s"),
+    # --- soul altar task board (spec 4.3.2) ------------------------------
+    "cmd.altar_header": ("=== Soul altar ===", "=== 灵魂圣坛 ==="),
+    "cmd.altar_row": ("  Tasks complete: %s/%s (B slots %s/%s)",
+                      "  已完成任务：%s/%s（B 级契约位 %s/%s）"),
+    "cmd.altar_next": ("  Next task: %s", "  下一项任务：%s"),
+    "cmd.altar_offering": ("  Offering: %s/%s shards (%s)",
+                           "  祭品：%s/%s 碎片（%s）"),
+    "cmd.altar_state_active": ("awakened", "已苏醒"),
+    "cmd.altar_state_dormant": ("dormant", "沉睡"),
+    "cmd.task.protect_villagers": ("Protect villagers", "保护村民"),
+    "cmd.task.dangerous_delve": ("Complete a dangerous delve", "完成一次危险探索"),
+    "cmd.task.defeat_enemy_type": ("Defeat a specific enemy type", "击败特定类型敌人"),
+    "cmd.task.assisted_kills": ("Accumulate assisted kills", "累计协助战斗"),
+    "cmd.task.soul_anchor_trial": ("Clear a soul-anchor trial", "完成一次灵魂锚点试炼"),
+    # --- 第二灵魂 trial (spec 4.3.3 / 11.8) ------------------------------
+    # One key per condition so the readout tracks the spec's own five clauses
+    # instead of an implementation-shaped summary.
+    "trial.header": ("=== Second Soul trial (second C seat) ===",
+                     "=== 第二灵魂试炼（第二圣契位）==="),
+    "trial.distinct_anchors": (
+        "Awaken B-tier companions of distinct anchors",
+        "觉醒不同锚点的 B 级伙伴"),
+    "trial.altar_activated": (
+        "Build and awaken the Soul Altar",
+        "建造并唤醒灵魂圣坛"),
+    "trial.capacity_shards": (
+        "Offer capacity shards at the altar",
+        "在圣坛献上契约容量碎片"),
+    "trial.boss_or_delve": (
+        "Defeat a Warden or Elder Guardian, or delve the Deep Dark",
+        "击败监守者或远古守卫者，或完成一次深暗之城探索"),
+    "trial.grand_sacrifice": (
+        "Complete a grand rite with three different anchors",
+        "以三种不同锚点完成一次大型灵魂仪式"),
+    "trial.row": ("  %s: %s", "  %s：%s"),
+    "trial.ready": (
+        "Every clause is satisfied. The second covenant seat awaits.",
+        "所有条件均已满足，第二圣契位在等待你。"),
+    "trial.not_ready": (
+        "The trial is not yet complete.",
+        "试炼尚未完成。"),
+    "trial.boss_defeated": ("Trial clause cleared: %s",
+                            "试炼条件达成：%s"),
+    "trial.sacrifice_done": (
+        "The grand rite is done - %s souls were offered.",
+        "大型仪式完成 - 已有 %s 个灵魂被献上。"),
+    "trial.boss.warden": ("the Warden", "监守者"),
+    "trial.boss.elder_guardian": ("the Elder Guardian", "远古守卫者"),
+    "trial.boss.deep_dark": ("a Deep Dark delve", "一次深暗之城探索"),
+    # --- settings --------------------------------------------------------
+    "cmd.setting_particles": ("Particle quality", "粒子质量"),
+    "cmd.setting_effects": ("Ritual effects", "仪式特效"),
+    "cmd.setting_shake": ("Screen shake", "屏幕震动"),
+    "cmd.setting_active": ("  Active ceremonies: %s", "  进行中的法阵：%s"),
+    "cmd.quality.low": ("low", "低"),
+    "cmd.quality.medium": ("medium", "中"),
+    "cmd.quality.high": ("high", "高"),
+    "cmd.toggle.on": ("on", "开"),
+    "cmd.toggle.off": ("off", "关"),
+    "cmd.shake.off": ("off", "关"),
+    "cmd.shake.weak": ("weak", "弱"),
+    "cmd.shake.normal": ("normal", "普通"),
+    "cmd.shake.strong": ("strong", "强"),
+}
+
+# ---------------------------------------------------------------------------
+# The ritual settings screen (spec 13.1) and its keybind.
+#
+# Spec 13.1 lists the same three settings the commands expose, but a command
+# is not discoverable, so the screen is the player-facing form of that table.
+# The value keys are shared with `cmd.quality.*` / `cmd.shake.*` in spirit, but
+# kept separate because the screen's wording is title-case ("Low") where the
+# command's is inline ("low") - the spec asks for a settings UI, not a log.
+# ---------------------------------------------------------------------------
+UI = {
+    "key.golem_covenant.ritual_settings": (
+        "Open Ritual Settings", "打开法阵设置"),
+    "screen.ritual.title": ("Ritual Effects", "仪式特效设置"),
+    "setting.rituals": ("Ritual Effects", "仪式特效"),
+    "setting.quality": ("Particle Quality", "粒子质量"),
+    "setting.shake": ("Screen Shake", "屏幕震动"),
+    "setting.hint.low": (
+        "Low keeps only the circle outline and the core.",
+        "低质量仅保留法阵轮廓与核心粒子。"),
+    "setting.hint.scale": (
+        "Density drops automatically when many companions are nearby.",
+        "同屏伙伴较多时会自动降低粒子密度。"),
+    "value.on": ("On", "开"),
+    "value.off": ("Off", "关"),
+    "value.quality.low": ("Low", "低"),
+    "value.quality.medium": ("Medium", "中"),
+    "value.quality.high": ("High", "高"),
+    "value.shake.off": ("Off", "关"),
+    "value.shake.weak": ("Weak", "弱"),
+    "value.shake.normal": ("Normal", "普通"),
+    "value.shake.strong": ("Strong", "强"),
 }
 
 # effectId -> (en, zh). Effect display names come from the will theme table.
@@ -247,6 +462,9 @@ def build(en: bool) -> dict:
     # items
     for k, v in ITEMS.items():
         out[f"item.golem_covenant.{k}"] = v[0] if en else v[1]
+    # blocks (spec 4.3.1 / 4.3.2) - a separate namespace from the item key
+    for k, v in BLOCKS.items():
+        out[f"block.golem_covenant.{k}"] = v[0] if en else v[1]
     merge(out, ITEM_TOOLTIP, en)
     for k, v in MESSAGES.items():
         out[f"golem_covenant.{k}"] = v[0] if en else v[1]
@@ -259,7 +477,21 @@ def build(en: bool) -> dict:
         out[f"golem_covenant.{k}"] = v[0] if en else v[1]
     merge(out, KEYS, en)
     merge(out, HUD, en)
-    merge(out, COMMANDS, en)
+    # COMMANDS keys are bare `cmd.*`, so they need the namespace prefix here;
+    # every other block either already carries its full path or is merged by
+    # its own helper. Getting this wrong ships raw keys to chat, which is
+    # exactly what validate_lang.py checks for.
+    for k, v in COMMANDS.items():
+        out[f"golem_covenant.{k}"] = v[0] if en else v[1]
+
+    # Screen / keybind keys (spec 13.1). `key.*` is the one exception: MC reads
+    # keybind labels from the full `key.<namespace>.<name>` path, so those are
+    # already fully qualified and must NOT be prefixed a second time.
+    for k, v in UI.items():
+        if k.startswith("key."):
+            out[k] = v[0] if en else v[1]
+        else:
+            out[f"golem_covenant.{k}"] = v[0] if en else v[1]
 
     # will display names
     for eid, v in EFFECT_NAMES.items():
@@ -304,7 +536,15 @@ def build(en: bool) -> dict:
     for dim, label in ANCHOR_DIMENSION_LABELS.items():
         out[f"golem_covenant.anchor.dim.{dim}"] = label[0] if en else label[1]
     for bh, v in (reg.get("anchorBehaviours") or {}).items():
-        out[f"golem_covenant.behaviour.{bh}"] = v.get("name") or _humanize(bh)
+        if en:
+            out[f"golem_covenant.behaviour.{bh}"] = (
+                BEHAVIOUR_EN.get(bh) or _humanize(bh))
+        else:
+            out[f"golem_covenant.behaviour.{bh}"] = v.get("name") or _humanize(bh)
+    # The reserved band (spec 11.2.3) has no anchor of its own, so /golem
+    # anchor and /golem bond need a name to fall back to instead of a raw key.
+    out["golem_covenant.anchor.reserved"] = (
+        "Unimplemented" if en else "未实装")
     return out
 
 
@@ -319,6 +559,9 @@ ANCHOR_DIMENSION_LABELS = {
     "interact": ("Player Interaction", "玩家互动"),
     "deathWill": ("Death Will", "死亡遗志"),
     "ritual": ("Ritual", "仪式结构"),
+    # Not one of the nine: the Bond-gated depth a companion has unlocked,
+    # shown by /golem anchor and /golem bond (spec 9.4).
+    "depth": ("Depth", "深度"),
 }
 
 # ---------------------------------------------------------------------------
@@ -925,10 +1168,303 @@ ANCHOR_EN: dict[str, dict[str, str]] = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Anchor behaviour display names (spec 11.13 / 11.15.4).
+#
+# The registry's anchorBehaviours block stores Chinese names only, so en_us is
+# translated here. A behaviour added to the registry without an entry falls
+# back to a humanised id, and validate_lang.py flags the missing CJK-free
+# value - so this table cannot silently fall behind the vocabulary.
+# ---------------------------------------------------------------------------
+BEHAVIOUR_EN = {
+    "arctic_fang": "Arctic Fang",
+    "arrow_forecast": "Impact Forecast",
+    "bamboo": "Bamboo Grove",
+    "biome_orb": "Biome Domain",
+    "blade_reap": "Withering Reap",
+    "burden": "Burden Field",
+    "burrow_swarm": "Burrow Swarm",
+    "charge_horn": "Charge Horn",
+    "city_wall": "City Bulwark",
+    "coral_scale": "Coral Scale",
+    "corpse_anchor": "Corpse Anchor",
+    "crimson_tusk": "Crimson Tusk",
+    "current_dash": "Current Dash",
+    "death_harvest": "Death Harvest",
+    "deep_echo": "Deep Echo",
+    "deep_ink": "Deep Ink Veil",
+    "desiccation_field": "Desiccation Field",
+    "echo_sense": "Echo Sense",
+    "elastic": "Elastic Anchor",
+    "frost_leap": "Frost Leap",
+    "frost_trajectory": "Frost Trajectory",
+    "gold_contract": "Golden Contract",
+    "gold_flame": "Golden Flame",
+    "grass_echo": "Verdant Echo",
+    "guardian_watch": "Guardian Watch",
+    "hive": "Hive Network",
+    "hunt": "Hunt Anchor",
+    "implosion": "Implosion Anchor",
+    "jungle_stalk": "Jungle Stalk",
+    "lava_stride": "Lava Stride",
+    "magma_core": "Magma Core",
+    "moon_leap": "Moon Leap",
+    "mountain_horn": "Mountain Echo",
+    "night_prowl": "Night Prowl",
+    "nine_lives": "Nine Lives Rescue",
+    "plume_dance": "Plume Dance",
+    "plume_echo": "Plume Echo",
+    "prism": "Prism Refraction",
+    "profession": "Profession Anchor",
+    "regeneration_gill": "Regenerating Gill",
+    "rock_roll": "Rolling Stone Field",
+    "sand_march": "Sand March",
+    "school_charge": "School Charge",
+    "shadow_mite": "Shadow Mite",
+    "shell": "Carapace Anchor",
+    "sky_dash": "Sky Dash",
+    "snow_prowl": "Snowfield Prowl",
+    "space": "Space Anchor",
+    "spine_guard": "Spine Guard",
+    "spore": "Spore Bloom",
+    "steady_hoof": "Steady Hoof",
+    "sulfur_core": "Core Anchor",
+    "sun_flare": "Sun Flare",
+    "tide_pursuit": "Tide Pursuit",
+    "tide_shell": "Tidal Shell",
+    "tusk": "Tusk Thrust",
+    "venom_nest": "Venom Nest",
+    "village_cycle": "Village Cycle",
+    "wail": "Wailing Field",
+    "warm_spring": "Warm Spring",
+    "web_of_fate": "Web of Fate",
+    "wool": "Wool Cushion",
+}
+
+
 def _humanize(sid: str) -> str:
     if not sid or sid == "reserved":
         return ""
     return sid.replace("_", " ").title()
+
+
+def _ritual_en(form: dict) -> str:
+    """
+    English name for a form's magic-circle theme (spec 5.3 / 11.13).
+
+    The ritual symbol is Chinese (`断墓骨环`). Its geometry id is English and
+    already distinguishes the circle's shape, which is what the English reader
+    needs from this line, so the geometry is humanized.
+
+    The reserved band (spec 11.2.3) has no geometry - it exists so that a
+    future form can drop into a known slot - so its circle is named by that
+    slot, mirroring how `_form_name_en` names the reserved forms themselves.
+    """
+    geometry = (form.get("ritual") or {}).get("geometry")
+    # `reserved` is a placeholder value, not a real circle, so it must not be
+    # humanized to the literal word "Reserved" and then read as a circle name.
+    if geometry and geometry != "reserved":
+        return _humanize(geometry)
+    if form.get("status") == "reserved":
+        number = form.get("sourceId") or form.get("number") or ""
+        return f"Reserved Circle {number}".strip()
+    return ""
+
+
+def _ability_en(form: dict, id_key: str, fallback: str = "") -> str:
+    """
+    English name for one of a form's abilities (spec 11.13 sub-keys).
+
+    Careful: `bActiveId` is NOT usable for this. It was built by escaping each
+    CJK codepoint to `u<hex>` to keep it a unique identifier, so humanizing it
+    yields `Zombie U4Ea1U9Ab8U58C1U5792` - an internal id leaking into a
+    tooltip. It is used only as a *presence* test here.
+
+    The other ids (`chain`, `gravity_well`, `damage_reduction`) are genuine
+    English snake_case and humanize cleanly, so they are the ones that carry
+    the name. Where a form has only an escaped id, `fallback` is used, which is
+    composed from language-neutral fields instead.
+    """
+    raw = form.get(id_key, "")
+    if not raw or raw == "reserved":
+        return fallback or _generic_ability_en(form)
+    # Reject escaped-CJK ids: they are identifiers, not names.
+    if re.search(r"u[0-9a-f]{4}", raw):
+        return fallback or _generic_ability_en(form)
+    return _humanize(raw) or fallback or _generic_ability_en(form)
+
+
+def _generic_ability_en(form: dict) -> str:
+    """
+    Last-resort English label, composed from fields that are always English.
+
+    Reached by forms whose ability ids are all escaped or absent, which is the
+    whole reserved band plus a handful of active forms. The composition walks a
+    list of candidates in decreasing specificity and returns the first that
+    yields something:
+
+      family + variant   e.g. `Beast Color`   (active, id was escaped)
+      entity name        e.g. `Wolf`
+      "Reserved <id>"    guaranteed non-empty (the reserved band)
+
+    The final fallback matters: `validate_lang.py` compares en and zh key *sets*
+    and fails on asymmetry, so a form must never produce an empty English value
+    while its Chinese counterpart is non-empty. Reserved forms would otherwise
+    hit it - `familyId` and `variantType` are both the literal `"reserved"` and
+    `_humanize` maps that to `""`.
+    """
+    family = _humanize(form.get("familyId", ""))
+    variant = _humanize(form.get("variantType", ""))
+    parts = [p for p in (family, variant) if p]
+    if parts:
+        return " ".join(parts)
+    # Active forms keep their entity name available even when the family is a
+    # placeholder; reserved forms have no entity, so name them by their slot.
+    entity = form.get("entityId") or ""
+    base = ENTITY_EN.get(entity.split(":")[-1])
+    if base:
+        return base
+    number = form.get("sourceId") or form.get("number") or form.get("formId")
+    return f"Reserved {number}".strip()
+
+
+# ---------------------------------------------------------------------------
+# Form display names (spec 11.13: golem_covenant.form.<formId>).
+#
+# The source table's `nameEn` column is empty for 155 of the 186 forms - it
+# just repeats the Chinese `displayName`. Rather than hand-maintaining 186
+# translations (which would rot the moment a form is added), the English name
+# is COMPOSED from the entity id plus the variant tokens, both of which are
+# small closed vocabularies. Anything unrecognised falls back to the entity
+# name alone, so a new form still yields a sane name instead of Chinese text.
+# ---------------------------------------------------------------------------
+
+# entityId -> English entity name.
+ENTITY_EN = {
+    "axolotl": "Axolotl", "bat": "Bat", "bee": "Bee", "blaze": "Blaze",
+    "camel": "Camel", "cat": "Cat", "cave_spider": "Cave Spider",
+    "chicken": "Chicken", "cod": "Cod", "cow": "Cow",
+    "creeper": "Creeper", "dolphin": "Dolphin", "donkey": "Donkey",
+    "drowned": "Drowned", "elder_guardian": "Elder Guardian",
+    "enderman": "Enderman", "endermite": "Endermite", "fox": "Fox",
+    "frog": "Frog", "ghast": "Ghast", "glow_squid": "Glow Squid",
+    "goat": "Goat", "guardian": "Guardian", "hoglin": "Hoglin",
+    "horse": "Horse", "husk": "Husk", "iron_golem": "Iron Golem",
+    "magma_cube": "Magma Cube", "mooshroom": "Mooshroom", "mule": "Mule",
+    "ocelot": "Ocelot", "panda": "Panda", "parrot": "Parrot", "pig": "Pig",
+    "piglin": "Piglin", "polar_bear": "Polar Bear", "pufferfish": "Pufferfish",
+    "rabbit": "Rabbit", "salmon": "Salmon", "sheep": "Sheep",
+    "shulker": "Shulker", "silverfish": "Silverfish", "skeleton": "Skeleton",
+    "slime": "Slime", "snow_golem": "Snow Golem", "spider": "Spider",
+    "squid": "Squid", "stray": "Stray", "strider": "Strider",
+    "sulfur_cube": "Sulfur Cube", "tadpole": "Tadpole",
+    "tropical_fish": "Tropical Fish", "turtle": "Turtle",
+    "villager": "Villager", "warden": "Warden",
+    "wither_skeleton": "Wither Skeleton", "wolf": "Wolf", "zombie": "Zombie",
+    "zombie_villager": "Zombie Villager",
+    "zombified_piglin": "Zombified Piglin",
+}
+
+# Chinese variant token -> English. Covers every token present in the table.
+VARIANT_EN = {
+    "普通": "", "成年": "Adult", "幼年": "Baby",
+    # professions
+    "农民": "Farmer", "渔夫": "Fisherman", "牧师": "Cleric",
+    "牧羊人": "Shepherd", "制箭师": "Fletcher", "图书管理员": "Librarian",
+    "制图师": "Cartographer", "武器匠": "Weaponsmith", "工具匠": "Toolsmith",
+    "盔甲匠": "Armorsmith", "屠夫": "Butcher", "石匠": "Mason",
+    "无业": "Unemployed",
+    # colours
+    "红色": "Red", "橘": "Orange", "蓝": "Blue", "绿": "Green",
+    "灰": "Gray", "黑": "Black", "白": "White", "棕": "Brown",
+    "棕色": "Brown", "红蓝": "Red & Blue", "青绿": "Cyan",
+    "三花": "Calico", "暹罗": "Siamese", "布偶": "Ragdoll",
+    "虎斑": "Tabby", "黑猫": "Black", "其他花色": "Other Coat",
+    "不同毛色": "Assorted Coat", "不同颜色": "Assorted Colour",
+    "五色/花色": "Five-Colour", "普通颜色": "Common Colour",
+    "金色/特殊": "Golden / Special", "特殊羊毛色": "Special Wool",
+    "彩色羊毛：红": "Red Wool", "彩色羊毛：绿": "Green Wool",
+    "彩色羊毛：蓝": "Blue Wool",
+    # sizes
+    "大": "Large", "中": "Medium", "小": "Small",
+    # biomes
+    "森林": "Forest", "雪原": "Snowy", "黑森林": "Dark Forest",
+    "沙地": "Desert", "沼泽": "Swamp", "丛林": "Jungle",
+    "沙漠": "Desert", "雪狐": "Arctic", "夜雪变种": "Night Snow",
+    "黑夜变种": "Night", "雪原变种": "Snowy", "沙漠变种": "Desert",
+    "丛林变种": "Jungle", "温暖": "Warm", "温带": "Temperate",
+    "寒冷": "Cold",
+    # variants
+    "高速变种": "Swift", "高跳变种": "Leaping", "高生命变种": "Vigorous",
+    "高负载变种": "Burdened", "性格变种": "Personality", "稀有变种": "Rare",
+    "尖叫": "Screaming", "杀手兔": "Killer", "闪电变种": "Charged",
+    "特殊/毒态": "Venomous", "特殊Boss": "Boss", "多样花纹": "Patterned",
+    "吸收冰块状态": "Ice-Absorbing", "吸收熔岩/热状态": "Lava-Absorbing",
+    "吸收TNT：未点燃": "TNT-Absorbing",
+    "吸收TNT：已点燃": "TNT-Primed",
+    # already-English archetypes from the source table
+    "Regular": "Regular", "Slow Bouncy": "Slow Bouncy", "Hot": "Hot",
+    "Explosive": "Explosive",
+}
+
+# "幼年：森林" style composites, plus the "+" composites.
+VARIANT_COMPOSITE_EN = {
+    "幼年：森林": "Baby Forest", "幼年：雪原": "Baby Snowy",
+    "温暖+幼年": "Warm Baby", "温带+幼年": "Temperate Baby",
+    "寒冷+幼年": "Cold Baby",
+}
+
+
+def _form_name_en(form: dict) -> str:
+    """Compose an English form name from entity id + variant tokens."""
+    display = form.get("displayName") or ""
+
+    # The reserved band (spec 11.2.3) has no entity and no variant: its only
+    # identity is its slot in the 186 list, which lives in `sourceId`.
+    if form.get("status") == "reserved":
+        number = form.get("sourceId") or form.get("number") or ""
+        return f"Reserved Form {number}".strip()
+
+    entity = form.get("entityId", "")
+    base = ENTITY_EN.get(entity.split(":")[-1])
+    if base is None:
+        # Unknown entity: derive from the id so the name is still English.
+        base = _humanize(entity.split(":")[-1]) or form["formId"]
+
+    if "·" not in display:
+        return base
+
+    parts = []
+    for token in display.split("·")[1:]:
+        english = VARIANT_COMPOSITE_EN.get(token)
+        if english is None:
+            english = VARIANT_EN.get(token, "")
+        if english:
+            parts.append(english)
+    # A bare "普通" (common) yields no parts, which is the intent: the entity
+    # name alone already means the common variant.
+    name = " ".join([base] + parts)
+
+    # A few forms are the same creature as another form but distinguished only
+    # by an id suffix (cat_black vs cat_black_cat, axolotl_rare vs rare_2).
+    # Their displayName is identical, so the name needs the id tail to stay
+    # unambiguous in the tooltip and the /golem output.
+    return _disambiguate(form, name)
+
+
+def _disambiguate(form: dict, name: str) -> str:
+    """Suffix a name when another form would produce the same string."""
+    suffix = DISAMBIGUATE_EN.get(form.get("formId", ""))
+    return f"{name} ({suffix})" if suffix else name
+
+
+# formId -> suffix, for forms whose composed name would collide with a sibling.
+# Detected by tools/validate_lang.py, which fails on duplicate en_us values.
+DISAMBIGUATE_EN = {
+    "animal_cat_black_cat": "Black Coat",
+    "aquatic_axolotl_rare_2": "Golden",
+    "zombie_zombie_villager_baby_2": "Variant",
+}
 
 
 def main() -> int:
@@ -939,11 +1475,44 @@ def main() -> int:
     counts = {}
     for en, name in ((True, "en_us.json"), (False, "zh_cn.json")):
         data = build(en)
-        # per-form display names, keyed by formId (spec 11.2.1 derived names)
+        # Per-form display names and the five ability sub-keys (spec 11.13).
+        # The key shape is fixed by the spec:
+        #   golem_covenant.form.<formId>.name / .b_active / .b_passive
+        #                              / .c_second / .death_will / .ritual
+        # zh_cn uses the source table's Chinese verbatim; en_us is COMPOSED,
+        # because the table's nameEn column is not real English for 155 of 186
+        # forms and no English exists at all for the ability names.
         for f in reg["forms"]:
-            key = f"golem_covenant.form.{f['formId']}"
-            label = f.get("nameEn") if en else f.get("displayName")
-            data[key] = label or f["formId"]
+            if en:
+                # A form's B-active id is a slugged Chinese name, so it cannot
+                # supply an English label. The anchor behaviour is a real
+                # English id and describes what the form actually does, so it
+                # stands in for the active ability's name.
+                b_active_fallback = _humanize(f.get("anchorBehaviour", ""))
+                values = {
+                    "name": _form_name_en(f),
+                    "b_active": _ability_en(f, "bActiveId", b_active_fallback),
+                    "b_passive": _ability_en(f, "bPassiveId"),
+                    "c_second": _ability_en(f, "cSecondId"),
+                    "death_will": _ability_en(f, "deathWillId"),
+                    "ritual": _ritual_en(f),
+                }
+            else:
+                values = {
+                    "name": f.get("displayName") or f["formId"],
+                    "b_active": f.get("bActive") or "",
+                    "b_passive": f.get("bPassiveName") or f.get("bPassive") or "",
+                    "c_second": f.get("cSecond") or "",
+                    "death_will": f.get("deathWill") or "",
+                    "ritual": (f.get("ritual") or {}).get("symbol") or "",
+                }
+            for suffix, text in values.items():
+                key = f"golem_covenant.form.{f['formId']}.{suffix}"
+                # An empty value would render as a blank line in the tooltip and
+                # would also trip validate_lang; omit the key instead so the
+                # caller can detect it as absent.
+                if text:
+                    data[key] = text
         path = os.path.join(LANG_DIR, name)
         with open(path, "w", encoding="utf-8") as fh:
             json.dump(data, fh, ensure_ascii=False, indent=2, sort_keys=True)

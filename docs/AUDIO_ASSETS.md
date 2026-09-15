@@ -62,4 +62,45 @@ SoundEvent（见 `registry/ModSounds.java` 与 `assets/golem_covenant/sounds.jso
 
 - [x] 全部 9 个 SoundEvent 已在代码中注册
 - [x] `sounds.json` 已生成，事件名与路径映射完整
-- [ ] ogg 资产待补齐（缺失时仅告警，不影响运行与其他功能）
+- [x] 9 个 ogg 资产已生成（自制合成，无第三方素材，无版权风险）
+- [x] 资产生成与校验已纳入构建门禁（`generateSounds` / `validateSounds`）
+
+### 4.1 资产来源与生成方式
+
+9 个 ogg 全部由 `tools/gen_sounds.py` **程序化合成**（`tools/vorbis_encoder.py`
+为项目自带的纯 Python Ogg Vorbis 编码器），不引用任何外部素材，因此
+`LICENSE_AUDIO` 无需署名条目，也不存在 Mojang 原版音效的版权问题。
+
+| 文件 | 时长 | 说明 |
+|---|---|---|
+| `ritual_a.ogg` | 1.90s | A 级单次上升铃音 |
+| `ritual_b.ogg` | 2.74s | B 级五阶段（主环 → 核心 → 微光 → 撞击爆发） |
+| `ritual_c.ogg` | 3.72s | C 级七阶段（三重环 + 符文渐强 + 6 次锻造击打 + 外爆/内锁） |
+| `death_will_guard.ogg` | 1.63s | 守护型遗志 |
+| `death_will_scout.ogg` | 1.44s | 侦察型遗志 |
+| `death_will_heal.ogg` | 1.72s | 治疗型遗志 |
+| `death_will_element.ogg` | 1.53s | 元素型遗志 |
+| `death_will_control.ogg` | 1.63s | 控制型遗志 |
+| `death_will_mobility.ogg` | 1.11s | 机动型遗志 |
+
+规格 5.3 要求六个形态之间至少 3 项不同，音效节奏是其中一项，因此三套
+仪式音在时长与节奏结构上刻意拉开差异（1.90 / 2.74 / 3.72 秒）。
+
+### 4.2 门禁
+
+`validateSounds` 是一个**独立解码器**：它不复用编码器的任何代码，而是
+按 RFC 3533 与 Vorbis I 规范重新解析磁盘上的字节。这样编码器的 bug
+无法"自我认证"。它检查：
+
+1. Ogg 页结构、**重算 CRC**、BOS/EOS 标记、页序连续性；
+2. 跨页包重组（含 continued 标志）；
+3. identification header（版本 / 声道数 / 采样率 / 块大小 / framing bit）；
+4. comment header（vendor、注释列表、framing bit）；
+5. setup header 完整遍历（codebook / time / floor1 / residue / mapping / modes
+   的每一个字段，含带 `-1` 偏移的计数字段）；
+6. 音频包中的 floor 曲线**是否真的有信号**（全零即静音，属于结构合法但
+   不可用的失败模式）；
+7. `sounds.json` 与磁盘文件的一一对应。
+
+> 注意：`validateSounds` 依赖 `generateSounds` 的输出目录，因此
+> `build.gradle` 中已声明 `dependsOn`，否则会校验到陈旧或缺失的目录。

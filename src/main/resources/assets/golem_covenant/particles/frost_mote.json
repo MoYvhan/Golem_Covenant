@@ -1,5 +1,7 @@
 {
   "textures": [
-    "minecraft:particle"
+    "minecraft:nautilus",
+    "minecraft:glint",
+    "minecraft:bubble_white"
   ]
 }

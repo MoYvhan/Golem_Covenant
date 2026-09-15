@@ -1,0 +1,19 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "category": "misc",
+  "group": "golem_covenant_tier",
+  "ingredients": [
+    "minecraft:golden_apple",
+    "minecraft:golden_apple",
+    "minecraft:golden_apple",
+    "minecraft:golden_apple",
+    "minecraft:golden_carrot",
+    "minecraft:golden_carrot",
+    "minecraft:golden_carrot",
+    "minecraft:golden_carrot"
+  ],
+  "result": {
+    "id": "golem_covenant:soul_fruit",
+    "count": 1
+  }
+}

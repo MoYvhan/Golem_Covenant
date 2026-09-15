@@ -164,7 +164,8 @@ public final class SummonManager {
 		LEDGER.put(target.getUUID(), data);
 		tameIfPossible(target, sp);
 
-		RitualEngine.playCeremony(sp, target, profile, tier);
+		RitualEngine.playCeremony(sp, target, profile, tier,
+				profile.familyId());
 
 		// spec 3.3: consume one item unless the player is in creative
 		if (!sp.isCreative()) {
@@ -270,8 +271,19 @@ public final class SummonManager {
 	// ------------------------------------------------------------------
 
 	/**
-	 * Spends shards to unlock a slot. B-tier requires altar tasks instead
-	 * (spec 4.3.2), which is modelled by {@code tiersUnlockedViaAltar}.
+	 * Spends shards to unlock a slot.
+	 *
+	 * <p>{@code altarTaskCompleted} is load-bearing in two places, because the
+	 * two non-purchasable tiers are gated on different things:
+	 * <ul>
+	 *   <li><b>B (spec 4.3.2)</b> - seats only ever come from 灵魂圣坛 tasks,
+	 *       so the flag must be true.</li>
+	 *   <li><b>C (spec 4.3.3)</b> - the second seat needs the whole 第二灵魂
+	 *       trial, which the caller passes as the same flag. A partial trial
+	 *       must not unlock it, which is why the callers pass
+	 *       {@link com.example.golem_covenant.trial.SecondSoulTrial#completed}
+	 *       rather than any single clause.</li>
+	 * </ul>
 	 */
 	public static boolean expandSlot(ServerPlayer player, CovenantTier tier,
 			boolean altarTaskCompleted) {
@@ -292,6 +304,23 @@ public final class SummonManager {
 		return true;
 	}
 
+	/**
+	 * spec 4.3.3 / 11.8: unlock the 第二圣契位 once the trial is complete.
+	 *
+	 * <p>Separate from {@link #expandSlot} so the trial can be checked here
+	 * rather than trusted from the caller. A caller that passed {@code true}
+	 * by mistake would otherwise hand out the mod's hardest reward for free.
+	 *
+	 * @return true when the seat was actually granted
+	 */
+	public static boolean grantSecondSoulSeat(ServerPlayer player) {
+		if (!com.example.golem_covenant.trial.SecondSoulTrial
+				.completed(player)) {
+			return false;
+		}
+		return expandSlot(player, CovenantTier.C, true);
+	}
+
 	/** spec 11.9.2: capacity fragments raise the soul capacity pool. */
 	public static boolean expandCapacity(ServerPlayer player, int amount) {
 		int current = CAPACITY_BONUS.getOrDefault(player.getUUID(), 0);
@@ -303,20 +332,34 @@ public final class SummonManager {
 		return true;
 	}
 
+	/**
+	 * spec 11.8: the live 第二灵魂 trial standing, as {@code condition -> progress}.
+	 *
+	 * <p>Delegates to {@link com.example.golem_covenant.trial.SecondSoulTrial}
+	 * so the numbers the command prints and the numbers the gate checks are
+	 * produced by one implementation. The earlier stub here returned three
+	 * hardcoded zeroes, which meant the trial could be "complete" in the
+	 * readout without anything having been observed.
+	 *
+	 * @deprecated prefer {@code SecondSoulTrial.conditions}, which keeps the
+	 *             condition ids alongside their thresholds. Kept because the
+	 *             map shape is convenient for a compact diagnostic dump.
+	 */
+	@Deprecated
 	public static Map<String, Integer> trialProgress(ServerPlayer player) {
 		Map<String, Integer> out = new HashMap<>();
-		// 11.8.1: >= 6 distinct anchors at B
-		java.util.Set<String> anchors = new java.util.HashSet<>();
-		for (CovenantData d : LEDGER.values()) {
-			if (d.ownedBy(player.getUUID()) && d.tier() != CovenantTier.A) {
-				anchors.add(d.anchorId());
-			}
+		for (com.example.golem_covenant.trial.TrialCondition condition
+				: com.example.golem_covenant.trial.SecondSoulTrial
+						.conditions(player)) {
+			out.put(condition.id(), condition.progress());
 		}
-		out.put("distinct_anchors", anchors.size());
-		out.put("capacity_shards", 0);
-		out.put("boss_defeated", 0);
-		out.put("altar_built", 0);
 		return out;
+	}
+
+	/** spec 11.8: true when every clause of the 第二灵魂 trial is satisfied. */
+	public static boolean secondSoulTrialComplete(ServerPlayer player) {
+		return com.example.golem_covenant.trial.SecondSoulTrial
+				.completed(player);
 	}
 
 	// ------------------------------------------------------------------

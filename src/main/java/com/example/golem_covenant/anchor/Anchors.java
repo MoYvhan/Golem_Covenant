@@ -99,4 +99,29 @@ public final class Anchors {
 				.filter(a -> familyId.equals(a.familyId()))
 				.toList();
 	}
+
+	/** Every family id that has at least one anchor, in declaration order. */
+	public static List<String> families() {
+		load();
+		return BY_ID.values().stream()
+				.map(AnchorProfile::familyId)
+				.filter(id -> id != null && !id.isBlank())
+				.distinct()
+				.toList();
+	}
+
+	/**
+	 * Anchors grouped by family, for the {@code /golem anchor list} view.
+	 *
+	 * <p>Ordering follows {@link #families()} so the command output is stable
+	 * between calls rather than depending on hash iteration order.
+	 */
+	public static Map<String, List<AnchorProfile>> groupedByFamily() {
+		load();
+		Map<String, List<AnchorProfile>> out = new LinkedHashMap<>();
+		for (String family : families()) {
+			out.put(family, byFamily(family));
+		}
+		return out;
+	}
 }

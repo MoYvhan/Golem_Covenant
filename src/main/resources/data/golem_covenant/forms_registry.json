@@ -4291,7 +4291,7 @@
     "durationB": 41,
     "durationC": 133,
     "coreShape": "core_orb",
-    "symbol": "黑瞳阵",
+    "symbol": "黑瞳阵·cat",
     "soundPattern": "animal_ritual_3",
     "layerCount": 2
    },
@@ -6647,7 +6647,7 @@
     "durationB": 31,
     "durationC": 130,
     "coreShape": "core_orb",
-    "symbol": "幼潮阵",
+    "symbol": "幼潮阵·turtle",
     "soundPattern": "aquatic_ritual_3",
     "layerCount": 1
    },

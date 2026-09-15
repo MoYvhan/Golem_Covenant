@@ -2,6 +2,7 @@ package com.example.golem_covenant.registry;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -27,6 +28,14 @@ public final class ModParticles {
 
 	private static final Map<String, SimpleParticleType> BY_FAMILY = new HashMap<>();
 	private static final List<SimpleParticleType> ALL = new ArrayList<>();
+	/**
+	 * Registry path -> type for every particle this mod registers.
+	 *
+	 * <p>The client provider registry walks this map so a particle type can
+	 * never exist without a client-side appearance (spec 5.7). Insertion order
+	 * is stable, which keeps the startup log readable.
+	 */
+	private static final Map<String, SimpleParticleType> BY_PATH = new LinkedHashMap<>();
 
 	/** Family -> registry path, matching the ritual `particleType` in JSON. */
 	private static final Map<String, String> FAMILY_PATHS = Map.of(
@@ -58,6 +67,7 @@ public final class ModParticles {
 		Registry.register(BuiltInRegistries.PARTICLE_TYPE,
 				GolemCovenantMod.id(path), type);
 		ALL.add(type);
+		BY_PATH.put(path, type);
 		return type;
 	}
 
@@ -78,5 +88,15 @@ public final class ModParticles {
 
 	public static List<SimpleParticleType> all() {
 		return List.copyOf(ALL);
+	}
+
+	/**
+	 * Registry path -> particle type, in registration order.
+	 *
+	 * <p>Used by the client to bind one {@code ParticleProvider} per type, so
+	 * that every registered particle has an appearance (spec 5.7).
+	 */
+	public static Map<String, SimpleParticleType> allByPath() {
+		return Map.copyOf(BY_PATH);
 	}
 }

@@ -1503,6 +1503,40 @@ def build():
             "number": nid,
         })
 
+    # -----------------------------------------------------------------
+    # spec 5.3: each creature must own a unique 法阵核心符号.
+    #
+    # The source 186-form table assigns a ritual theme per ROW, and two rows
+    # were written with the same theme (幼潮阵 on the drowned juvenile and the
+    # turtle juvenile, 黑瞳阵 on the two black cats). The theme is what the
+    # circle's totem is hashed from, so two creatures sharing one would trace
+    # an identical sigil - spec 5.3 forbids exactly that.
+    #
+    # Rather than hand-patching the JSON (which the next regeneration would
+    # overwrite), the collision is resolved here: the loser keeps the theme as
+    # its display text but gets a distinguishing suffix based on its own
+    # identity, so the symbol stays stable across regenerations.
+    # -----------------------------------------------------------------
+    symbol_users = collections.defaultdict(list)
+    for f in forms:
+        if f.get("status") != "active":
+            continue
+        sym = (f.get("ritual") or {}).get("symbol")
+        if sym:
+            symbol_users[sym].append(f)
+
+    for sym, users in symbol_users.items():
+        if len(users) < 2:
+            continue
+        # The first row keeps the original; the rest are disambiguated.
+        for f in users[1:]:
+            variant = f.get("variantType") or ""
+            entity = f.get("entityId", "").split(":")[-1]
+            # Prefer the entity name over the bare variant: it is the part a
+            # player would actually use to tell the two creatures apart.
+            tag = entity.replace("_", "") or variant
+            f["ritual"]["symbol"] = f"{sym}·{tag}"
+
     forms.sort(key=lambda x: (x["familyId"] == "reserved", x.get("number", 9999)))
     out = {
         "registryVersion": 1,

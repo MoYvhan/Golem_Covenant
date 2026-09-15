@@ -17,6 +17,13 @@ loom {
 			sourceSet sourceSets.client
 		}
 	}
+
+	// Spec 13.1: the ritual screen shake perturbs the camera render state,
+	// which has no event hook, so it needs a small client-only mixin. Loom
+	// generates the refmap from this declaration.
+	mixin {
+		defaultRefmapName = 'golem_covenant.refmap.json'
+	}
 }
 
 dependencies {
@@ -97,17 +104,43 @@ tasks.register('generateLang', Exec) {
 
 tasks.register('generateAssets', Exec) {
 	group = 'build'
-	description = 'Regenerates particle definitions and sounds.json'
+	description = 'Regenerates particle definitions, sounds.json and block/item models'
 	def pythonExe = providers.environmentVariable('PYTHON').getOrElse('python')
 	commandLine pythonExe, 'tools/gen_assets.py'
 	inputs.file('tools/gen_assets.py')
+	inputs.dir('src/main/resources/data/golem_covenant/recipe')
 	outputs.dir('src/main/resources/assets/golem_covenant/particles')
 	outputs.file('src/main/resources/assets/golem_covenant/sounds.json')
+	// spec 4.3.1 / 4.3.2: a registered block with no blockstate renders as the
+	// missing model, so these are generated alongside the particles.
+	outputs.dir('src/main/resources/assets/golem_covenant/blockstates')
+	outputs.dir('src/main/resources/assets/golem_covenant/models')
+}
+
+// Spec 11.12 / docs/AUDIO_ASSETS.md: the nine SoundEvents need real audio, and
+// Mojang's originals may not be shipped. The assets are therefore synthesised,
+// which makes them easy to regenerate and easy to get subtly wrong - a file
+// that looks like an .ogg but decodes to silence. Registered here, before the
+// tasks that reference it, so the name resolves during evaluation.
+tasks.register('generateSounds', Exec) {
+	group = 'build'
+	description = 'Synthesises the nine audio assets (spec 11.12)'
+	def pythonExe = providers.environmentVariable('PYTHON').getOrElse('python')
+	commandLine pythonExe, 'tools/gen_sounds.py'
+	inputs.file('tools/gen_sounds.py')
+	inputs.file('tools/vorbis_encoder.py')
+	// Declared as the .ogg glob rather than the whole directory: sounds.json
+	// sits one level up and belongs to generateAssets, so claiming the parent
+	// would leave two tasks owning overlapping locations.
+	outputs.files(fileTree('src/main/resources/assets/golem_covenant/sounds') {
+		include '*.ogg'
+	})
 }
 
 tasks.named('processResources') {
 	dependsOn tasks.named('generateLang')
 	dependsOn tasks.named('generateAssets')
+	dependsOn tasks.named('generateSounds')
 }
 
 // The generators write into src/main/resources, so every task that reads that
@@ -116,6 +149,7 @@ tasks.named('processResources') {
 tasks.withType(Jar).configureEach {
 	dependsOn tasks.named('generateLang')
 	dependsOn tasks.named('generateAssets')
+	dependsOn tasks.named('generateSounds')
 }
 
 tasks.register('validateSystems', Exec) {
@@ -142,12 +176,143 @@ tasks.register('validateAnchors', Exec) {
 	inputs.file('src/main/resources/data/golem_covenant/forms_registry.json')
 }
 
+// Spec 3.1: the three covenant recipes are the mod's only entry point, so
+// they are gated rather than trusted (ingredient multiset + result id).
+tasks.register('validateRecipes', Exec) {
+	group = 'verification'
+	description = 'Checks the covenant recipes against spec 3.1'
+	def pythonExe = providers.environmentVariable('PYTHON').getOrElse('python')
+	commandLine pythonExe, 'tools/validate_recipes.py'
+	inputs.file('tools/validate_recipes.py')
+	inputs.dir('src/main/resources/data/golem_covenant/recipe')
+	inputs.file('src/main/java/com/example/golem_covenant/item/ModItems.java')
+}
+
+// Spec 5.7 / 12.4: every registered particle must resolve to a real atlas
+// sprite AND have a client provider. This gate exists because the project
+// previously shipped `minecraft:particle` as a texture, which renders as the
+// missing-texture checkerboard - a silent, invisible-in-review bug.
+tasks.register('validateParticles', Exec) {
+	group = 'verification'
+	description = 'Checks particle definitions against the vanilla atlas'
+	def pythonExe = providers.environmentVariable('PYTHON').getOrElse('python')
+	// The particle directory is an OUTPUT of generateAssets, so this task
+	// must wait for it rather than reading a possibly-stale directory.
+	dependsOn tasks.named('generateAssets')
+	commandLine pythonExe, 'tools/validate_particles.py'
+	inputs.file('tools/validate_particles.py')
+	inputs.file('tools/gen_assets.py')
+	inputs.dir('src/main/resources/assets/golem_covenant/particles')
+	inputs.file('src/main/java/com/example/golem_covenant/registry/ModParticles.java')
+	inputs.file('src/client/java/com/example/golem_covenant/client/RitualParticles.java')
+}
+
+// Spec 11.13 / 11.15.4: a missing translation key does not throw - the player
+// just sees the raw key. This gate parses the Java sources for every
+// translatable() call and checks it against the generated lang files, so a
+// namespace mismatch or an untranslated string is a build failure.
+tasks.register('validateLang', Exec) {
+	group = 'verification'
+	description = 'Checks translation keys referenced by code against lang files'
+	def pythonExe = providers.environmentVariable('PYTHON').getOrElse('python')
+	dependsOn tasks.named('generateLang')
+	commandLine pythonExe, 'tools/validate_lang.py'
+	inputs.file('tools/validate_lang.py')
+	inputs.dir('src/main/resources/assets/golem_covenant/lang')
+	inputs.dir('src/main/java')
+	inputs.dir('src/client/java')
+}
+
+// Spec ch.5: the ritual is the mod's most visible system and the easiest to
+// ship broken-without-erroring (wrong sprite, skipped stage, two forms drawing
+// the same circle). This gate reads BOTH the registry and the ritual sources,
+// so a drift in either direction fails the build.
+tasks.register('validateRitual', Exec) {
+	group = 'verification'
+	description = 'Checks the ritual / magic-circle invariants (spec ch.5)'
+	def pythonExe = providers.environmentVariable('PYTHON').getOrElse('python')
+	commandLine pythonExe, 'tools/validate_ritual.py'
+	inputs.file('tools/validate_ritual.py')
+	inputs.file('src/main/resources/data/golem_covenant/forms_registry.json')
+	inputs.dir('src/main/java/com/example/golem_covenant/ritual')
+}
+
+// Spec 11.12 / docs/AUDIO_ASSETS.md. This is a *decoder*: it re-derives every
+// Vorbis field from the bytes on disk instead of reusing the encoder, so an
+// encoder bug cannot certify itself.
+tasks.register('validateSounds', Exec) {
+	group = 'verification'
+	description = 'Checks the generated .ogg assets are valid Ogg Vorbis'
+	def pythonExe = providers.environmentVariable('PYTHON').getOrElse('python')
+	// The sound files are an OUTPUT of generateSounds, so this must run after
+	// it or it would validate a stale (or absent) directory.
+	dependsOn tasks.named('generateSounds')
+	commandLine pythonExe, 'tools/validate_sounds.py'
+	inputs.file('tools/validate_sounds.py')
+	inputs.dir('src/main/resources/assets/golem_covenant/sounds')
+}
+
+// Spec 4.3.1 / 4.3.2: a registered block with no blockstate does not crash -
+// it renders as the missing model, and an item with no model shows as a
+// missing-texture cube. Both are invisible in review, so this gate cross-checks
+// the registry against the generated blockstates, models, loot tables and
+// recipes. The vanilla-texture check exists because the project has already
+// shipped one bad sprite reference (the particle `minecraft:particle` bug).
+tasks.register('validateBlockAssets', Exec) {
+	group = 'verification'
+	description = 'Checks blocks/items have blockstates, models, loot tables'
+	def pythonExe = providers.environmentVariable('PYTHON').getOrElse('python')
+	// These directories are OUTPUTS of generateAssets, so wait for it rather
+	// than reading a possibly-stale tree.
+	dependsOn tasks.named('generateAssets')
+	commandLine pythonExe, 'tools/validate_block_assets.py'
+	inputs.file('tools/validate_block_assets.py')
+	inputs.file('tools/gen_assets.py')
+	inputs.file('src/main/java/com/example/golem_covenant/registry/ModBlocks.java')
+	inputs.file('src/main/java/com/example/golem_covenant/item/ModItems.java')
+	inputs.dir('src/main/resources/assets/golem_covenant/blockstates')
+	inputs.dir('src/main/resources/assets/golem_covenant/models')
+	inputs.dir('src/main/resources/data/golem_covenant/loot_table')
+	inputs.dir('src/main/resources/data/golem_covenant/recipe')
+}
+
+// Spec 4.3.3 / 11.8: the 第二灵魂 trial is the mod's hardest reward, and the
+// failure mode is not a crash - it is a threshold quietly softened, or a
+// condition left wired to a constant so the readout shows five rows while
+// nothing is observed. Spec 11.8 exists precisely because the original text
+// had no numbers to test against, so this gate pins those numbers.
+tasks.register('validateTrial', Exec) {
+	group = 'verification'
+	description = 'Checks the 第二灵魂 trial is quantified and not stubbed'
+	def pythonExe = providers.environmentVariable('PYTHON').getOrElse('python')
+	// The lang directory is an OUTPUT of generateLang, so this must wait for
+	// it rather than reading a possibly-stale file (Gradle 9 rejects the
+	// implicit dependency outright, which is the desired behaviour).
+	dependsOn tasks.named('generateLang')
+	commandLine pythonExe, 'tools/validate_trial.py'
+	inputs.file('tools/validate_trial.py')
+	inputs.file('src/main/java/com/example/golem_covenant/trial/SecondSoulTrial.java')
+	inputs.file('src/main/java/com/example/golem_covenant/trial/TrialCondition.java')
+	inputs.file('src/main/java/com/example/golem_covenant/trial/TaskObserver.java')
+	inputs.file('src/main/java/com/example/golem_covenant/summon/SummonManager.java')
+	inputs.file('src/main/java/com/example/golem_covenant/block/entity/SoulAltarBlockEntity.java')
+	inputs.dir('src/main/resources/assets/golem_covenant/lang')
+}
+
 tasks.named('check') {
 	dependsOn tasks.named('validateFormsRegistry')
 	dependsOn tasks.named('validateSystems')
 	dependsOn tasks.named('validateAnchors')
+	dependsOn tasks.named('validateRecipes')
+	dependsOn tasks.named('validateParticles')
+	dependsOn tasks.named('validateLang')
+	dependsOn tasks.named('validateRitual')
+	dependsOn tasks.named('validateSounds')
+	dependsOn tasks.named('validateBlockAssets')
+	dependsOn tasks.named('validateTrial')
 	dependsOn tasks.named('generateLang')
 	dependsOn tasks.named('generateAssets')
+	dependsOn tasks.named('generateSounds')
 }
 
 // configure the maven publication

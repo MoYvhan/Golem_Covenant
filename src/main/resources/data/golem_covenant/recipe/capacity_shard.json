@@ -1,0 +1,14 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "category": "misc",
+  "group": "golem_covenant_expansion",
+  "ingredients": [
+    "minecraft:amethyst_shard",
+    "minecraft:sculk",
+    "minecraft:amethyst_shard"
+  ],
+  "result": {
+    "id": "golem_covenant:capacity_shard",
+    "count": 1
+  }
+}

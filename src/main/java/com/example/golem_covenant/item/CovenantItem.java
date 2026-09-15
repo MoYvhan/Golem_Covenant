@@ -10,7 +10,10 @@ import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.item.component.TooltipDisplay;
 import java.util.function.Consumer;
 
+import com.example.golem_covenant.data.CovenantItemData;
 import com.example.golem_covenant.data.CovenantTier;
+import com.example.golem_covenant.data.SoulProfile;
+import com.example.golem_covenant.registry.ModComponents;
 
 import org.jetbrains.annotations.Nullable;
 
@@ -56,5 +59,61 @@ public abstract class CovenantItem extends Item {
 			adder.accept(Component.translatable("golem_covenant.tooltip.has_will")
 					.withStyle(ChatFormatting.LIGHT_PURPLE));
 		}
+		// spec 11.13: an attuned stack names its form and lists the abilities
+		// that form actually grants. Read from the data component (spec 3.2)
+		// rather than an attachment, because the tooltip is built client-side
+		// and the client has no access to the base mod's block entity.
+		CovenantItemData attunement = ModComponents.get(stack);
+		attunement.profile().ifPresent(profile ->
+				appendFormTooltip(profile, adder, flag));
+	}
+
+	/**
+	 * Render the spec 11.13 per-form lines.
+	 *
+	 * <p>Each line is emitted only when the form actually has that ability, so
+	 * the tooltip stays honest: a form without a death will does not claim one.
+	 *
+	 * <p>Depth is gated on {@link TooltipFlag#isAdvanced()} (the F3+H detail
+	 * toggle) so a full covenant does not swamp the tooltip of an item sitting
+	 * in a hotbar.
+	 *
+	 * <p>Note for anyone porting older code: 26.2 removed the shift check from
+	 * the tooltip path entirely. {@code TooltipFlag} now exposes only
+	 * {@code isAdvanced()} / {@code isCreative()}, and {@code hasShiftDown()}
+	 * is an instance method on {@code InputWithModifiers} (a key or click
+	 * event) - it is not reachable from {@code appendHoverText}, which runs on
+	 * both sides from a data-driven call site.
+	 */
+	private static void appendFormTooltip(SoulProfile profile,
+			Consumer<Component> adder, TooltipFlag flag) {
+		adder.accept(Component.translatable(profile.translationKey("name"))
+				.withStyle(ChatFormatting.GOLD));
+		adder.accept(Component.translatable("golem_covenant.tooltip.ritual",
+				Component.translatable(profile.translationKey("ritual")))
+				.withStyle(ChatFormatting.DARK_AQUA));
+		if (!flag.isAdvanced()) {
+			adder.accept(Component.translatable(
+					"golem_covenant.tooltip.shift_for_details")
+					.withStyle(ChatFormatting.DARK_GRAY));
+			return;
+		}
+		ability(adder, profile, "b_active", ChatFormatting.GREEN);
+		ability(adder, profile, "b_passive", ChatFormatting.BLUE);
+		ability(adder, profile, "c_second", ChatFormatting.AQUA);
+		ability(adder, profile, "death_will", ChatFormatting.LIGHT_PURPLE);
+	}
+
+	private static void ability(Consumer<Component> adder, SoulProfile profile,
+			String suffix, ChatFormatting colour) {
+		Component label = abilityLabel(suffix);
+		adder.accept(Component.translatable("golem_covenant.tooltip.ability",
+				label, Component.translatable(profile.translationKey(suffix)))
+				.withStyle(colour));
+	}
+
+	private static Component abilityLabel(String suffix) {
+		return Component.translatable("golem_covenant.tooltip.ability."
+				+ suffix);
 	}
 }
